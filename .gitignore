@@ -1,0 +1,12 @@
+.env
+*.session
+*.session-journal
+
+data/raw/
+data/interim/
+data/processed/
+
+__pycache__/
+*.pyc
+.venv/
+.idea/
