@@ -1,0 +1,438 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --color-background: #16161a;
+  --color-headline: #fffffe;
+  --color-paragraph: #94a1b2;
+  --color-button: #7f5af0;
+  --color-button-text: #ffffff;
+  --color-stroke: #010101;
+  --color-main: #fffffe;
+  --color-secondary: #72757e;
+  --color-tertiary: #2cb67d;
+
+  --surface: #1f1f25;
+  --surface-soft: #24242b;
+  --surface-raised: #2b2b34;
+  --danger: #ff7a7a;
+  --warning-bg: rgba(127, 90, 240, 0.16);
+  --shadow: 0 28px 80px rgba(1, 1, 1, 0.36);
+
+  color: var(--color-headline);
+  background:
+    radial-gradient(circle at top left, rgba(127, 90, 240, 0.18), transparent 34rem),
+    radial-gradient(circle at bottom right, rgba(44, 182, 125, 0.10), transparent 30rem),
+    var(--color-background);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+button:hover:not(:disabled),
+.telegram-card a:hover {
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled),
+.telegram-card a:active {
+  transform: translateY(0);
+}
+
+.page {
+  width: min(1040px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0;
+}
+
+.hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+
+.card,
+.hero {
+  background: linear-gradient(180deg, rgba(31, 31, 37, 0.98), rgba(28, 28, 34, 0.96));
+  border: 2px solid var(--color-stroke);
+  border-radius: 28px;
+  padding: 30px;
+  box-shadow: var(--shadow);
+}
+
+.card {
+  margin-bottom: 20px;
+}
+
+.auth-card {
+  max-width: 540px;
+  margin: 48px auto;
+}
+
+.eyebrow {
+  color: var(--color-tertiary);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+h1,
+h2 {
+  margin: 8px 0 12px;
+  line-height: 1.05;
+  color: var(--color-headline);
+}
+
+h1 {
+  font-size: clamp(42px, 7vw, 80px);
+  letter-spacing: -0.06em;
+}
+
+h2 {
+  font-size: clamp(25px, 4vw, 38px);
+  letter-spacing: -0.04em;
+}
+
+p {
+  color: var(--color-paragraph);
+}
+
+.lead {
+  font-size: 20px;
+  line-height: 1.5;
+  color: var(--color-paragraph);
+}
+
+.form,
+.predict-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+label,
+.field-label {
+  display: grid;
+  gap: 8px;
+  color: var(--color-headline);
+  font-weight: 800;
+}
+
+input {
+  width: 100%;
+  padding: 15px 16px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 16px;
+  background: var(--surface-soft);
+  color: var(--color-headline);
+  outline: none;
+}
+
+input:focus {
+  border-color: var(--color-button);
+  box-shadow: 0 0 0 4px rgba(127, 90, 240, 0.22);
+}
+
+button,
+.telegram-card a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 16px;
+  padding: 15px 18px;
+  background: var(--color-button);
+  color: var(--color-button-text);
+  font-weight: 900;
+  cursor: pointer;
+  text-decoration: none;
+  box-shadow: 0 12px 28px rgba(127, 90, 240, 0.28);
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.secondary {
+  background: var(--surface-raised);
+  color: var(--color-headline);
+  box-shadow: none;
+}
+
+.small {
+  color: var(--color-paragraph);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.error {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 16px;
+  background: rgba(255, 122, 122, 0.16);
+  color: #ffb4b4;
+  font-weight: 800;
+}
+
+.date-field {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+.date-trigger {
+  width: 100%;
+  min-height: 64px;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: var(--surface-soft);
+  color: var(--color-headline);
+  box-shadow: none;
+  text-align: left;
+}
+
+.date-trigger:hover {
+  border-color: var(--color-button);
+}
+
+.date-trigger-icon {
+  color: var(--color-tertiary);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.calendar {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 12px);
+  left: 0;
+  width: min(620px, 100%);
+  padding: 22px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 24px;
+  background: var(--surface-raised);
+  box-shadow: 0 30px 90px rgba(1, 1, 1, 0.56);
+}
+
+.calendar-header {
+  display: grid;
+  grid-template-columns: 48px 1fr 48px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.calendar-header strong {
+  color: var(--color-headline);
+  font-size: 22px;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.calendar-nav {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  background: var(--color-button);
+  box-shadow: none;
+}
+
+.calendar-weekdays,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 8px;
+}
+
+.calendar-weekdays {
+  margin-bottom: 8px;
+}
+
+.calendar-weekdays span {
+  color: var(--color-paragraph);
+  font-size: 13px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.calendar-day {
+  min-height: 58px;
+  padding: 0;
+  border-radius: 16px;
+  background: var(--surface-soft);
+  color: var(--color-headline);
+  box-shadow: none;
+}
+
+.calendar-day:hover:not(:disabled) {
+  border-color: var(--color-button);
+  background: rgba(127, 90, 240, 0.16);
+}
+
+.calendar-day-muted {
+  color: var(--color-secondary);
+  opacity: 0.62;
+}
+
+.calendar-day-selected {
+  background: var(--color-button);
+  color: var(--color-button-text);
+  border-color: var(--color-button);
+}
+
+.calendar-day:disabled {
+  color: var(--color-secondary);
+  opacity: 0.32;
+  cursor: not-allowed;
+  background: rgba(114, 117, 126, 0.12);
+  box-shadow: none;
+}
+
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+}
+
+.probability {
+  font-size: clamp(56px, 10vw, 104px);
+  line-height: 1;
+  font-weight: 950;
+  color: var(--color-tertiary);
+  letter-spacing: -0.08em;
+}
+
+.result-no .probability {
+  color: var(--color-button);
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.meta-grid div {
+  padding: 16px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 18px;
+  background: var(--surface-soft);
+}
+
+.meta-grid span {
+  display: block;
+  color: var(--color-paragraph);
+  font-size: 13px;
+  margin-bottom: 5px;
+}
+
+.meta-grid strong {
+  color: var(--color-headline);
+  font-size: 18px;
+}
+
+.hint {
+  padding: 16px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 18px;
+  background: var(--warning-bg);
+  color: var(--color-headline);
+}
+
+.telegram-card {
+  border-color: var(--color-button);
+}
+
+.telegram-card a {
+  width: fit-content;
+  min-width: 190px;
+}
+
+.telegram-icon {
+  width: 22px;
+  height: 22px;
+}
+
+@media (min-width: 900px) {
+  .predict-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .calendar {
+    width: 640px;
+  }
+
+  .calendar-day {
+    min-height: 64px;
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 720px) {
+  .page {
+    width: min(100% - 20px, 1040px);
+    padding: 20px 0;
+  }
+
+  .hero,
+  .result-header {
+    display: block;
+  }
+
+  .card,
+  .hero {
+    border-radius: 22px;
+    padding: 22px;
+  }
+
+  .meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .secondary {
+    margin-top: 16px;
+  }
+
+  .calendar {
+    position: static;
+    width: 100%;
+    margin-top: 12px;
+    padding: 16px;
+  }
+
+  .calendar-day {
+    min-height: 46px;
+    border-radius: 13px;
+  }
+
+  .calendar-header strong {
+    font-size: 18px;
+  }
+}
