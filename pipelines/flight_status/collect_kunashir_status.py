@@ -290,9 +290,9 @@ def normalize_status(status_raw: str, scheduled_date: str, scheduled_time: str, 
 
     if "отмен" in normalized:
         return "cancelled"
-    if "задерж" in normalized or "перенес" in normalized:
+    if "задерж" in normalized or "перенес" in normalized or "перенос" in normalized or "отлож" in normalized:
         return "delayed"
-    if "совмещ" in normalized:
+    if "совмещ" in normalized or "объедин" in normalized:
         return "combined"
     if "вылетел" in normalized:
         return "departed"

@@ -63,7 +63,13 @@
 
 ## Данные
 
-Исторические данные собраны из Telegram-канала «Аэропорт на Кунашире(НЕофициально)» / `t.me/aeroportuk`.
+Данные проекта собираются слоями. Важно различать текущий backend-safe датасет,
+сырые свидетельства из новых источников и будущий объединённый датасет.
+
+### Текущий рабочий датасет
+
+Первый рабочий исторический датасет был собран из Telegram-канала
+«Аэропорт на Кунашире(НЕофициально)» / `t.me/aeroportuk`.
 
 Текущий источник для backend:
 
@@ -81,6 +87,20 @@
 - data version: `telegram-rule-labels-v2-2026-05-03`.
 
 Важно: это не официальная статистика аэропорта. Это предварительная автоматическая разметка Telegram-истории v2. После ручного аудита и labeler v3 цифры могут измениться.
+
+### История источников
+
+На момент разработки MVP использовались и проверялись такие источники:
+
+- Telegram `t.me/aeroportuk`: основной исторический источник для backend-safe dataset v2. Даёт длинную историю, но является неофициальным источником и требует аудита правил разметки.
+- Онлайн-табло аэропорта Южно-Сахалинска `https://airportus.ru/board/`: официальный текущий источник статуса рейсов. Используется hourly collector для сбора данных вперёд во времени.
+- Архив Wayback Machine для `airportus.ru/board/` и `m.airportus.ru/board/`: архивные снимки официального табло, полезные для ретроспективных подтверждений статуса рейса.
+- Официальные новости аэропорта `airportus.ru/news/post/{id}/`: источник отдельных подтверждённых отмен, задержек и изменений расписания. Если прямой запрос получает антибот-страницу, backfill-скрипт пробует Wayback-копию новости.
+- Местные СМИ ASTV и Sakh.online: вторичный источник, часто ссылающийся на онлайн-табло аэропорта. Используется как дополнительный evidence layer, а не как единственный источник истины.
+- TASS и Aviaport: точечные вторичные источники по отдельным сбоям/задержкам.
+- Сайт авиакомпании Аврора `flyaurora.ru`: проверялся как потенциальный источник, но на практике не дал стабильного публичного табло статусов для серверного парсинга. Поэтому подключён только как best-effort источник в hourly collector через `AURORA_STATUS_URL`.
+
+Текущая позиция по качеству данных: Telegram остаётся рабочим baseline-источником для backend, а официальные airportus/Wayback/news и media seed используются как слой подтверждений, который должен помочь собрать `dataset_daily_flights_v3.csv`.
 
 ### Hourly flight status collector
 
@@ -132,6 +152,173 @@ python pipelines/flight_status/collect_kunashir_status.py --loop --interval-seco
 ```
 
 В Docker Compose добавлен сервис `collector`, который запускает этот hourly-режим вместе с проектом.
+
+### Historical flight status backfill
+
+Для ретроспективного поиска подтверждений по старым рейсам добавлен отдельный скрипт:
+
+```text
+pipelines/flight_status/backfill_historical_status.py
+```
+
+Он собирает не финальные labels, а сырые свидетельства из источников:
+
+- Wayback snapshots онлайн-табло `airportus.ru/board/` и `m.airportus.ru/board/`;
+- официальный архив новостей `airportus.ru/news/post/{id}/`;
+- fallback на Wayback для новостей airportus, если прямой запрос получает антибот-страницу;
+- seed-список статей ASTV, Sakh.online, TASS, Aviaport.
+
+Основной выходной файл:
+
+```text
+data/raw/flight_status/kunashir_historical_sources.csv
+```
+
+Ошибки:
+
+```text
+data/raw/flight_status/historical_backfill_errors.csv
+```
+
+Последний успешный полный прогон `v2`:
+
+```bash
+python pipelines/flight_status/backfill_historical_status.py \
+  --all \
+  --from-year 2016 \
+  --to-year 2026 \
+  --from-post-id 2500 \
+  --to-post-id 4300 \
+  --concurrency 4 \
+  --request-sleep-seconds 0.3 \
+  --output data/raw/flight_status/kunashir_historical_sources_v2.csv \
+  --errors-output data/raw/flight_status/historical_backfill_errors_v2.csv
+```
+
+Результат прогона `v2`:
+
+- всего сырых свидетельств: `289`;
+- `wayback_board`: `128`;
+- `airportus_news`: `69`;
+- `media_seed`: `92`;
+- уникальных `source_url`: `91`;
+- уникальных `flight_date`: `129`;
+- уникальных event keys (`date`, `flight_numbers`, `direction`, `status`): `259`;
+- ошибок сбора: `12`.
+
+Распределение статусов в `kunashir_historical_sources_v2.csv`:
+
+- `delayed`: `104`;
+- `scheduled`: `90`;
+- `cancelled`: `39`;
+- `unknown`: `24`;
+- `departed`: `14`;
+- `combined`: `10`;
+- `arrived`: `6`;
+- `check_in`: `1`;
+- `in_flight`: `1`.
+
+Годы в `v2` по `flight_date`/`source_published_date`:
+
+- `2017`: `2`;
+- `2018`: `117`;
+- `2019`: `16`;
+- `2020`: `12`;
+- `2021`: `4`;
+- `2022`: `2`;
+- `2023`: `2`;
+- `2024`: `61`;
+- `2025`: `63`;
+- `2026`: `8`;
+- `missing`: `2`.
+
+Интерпретация:
+
+- `cancelled`, `departed`, `arrived`, `in_flight`, `delayed`, `combined` — сильные или средние свидетельства о фактическом состоянии рейса;
+- `scheduled` — не означает, что рейс был выполнен, это только факт присутствия в расписании/табло на момент снимка;
+- `unknown` требует исключения или ручного аудита;
+- `media_seed` полезен как дополнительный слой, но для конфликтных дней приоритет должен быть у `airportus_news` и `wayback_board`.
+
+Быстрый smoke test:
+
+```bash
+python pipelines/flight_status/backfill_historical_status.py \
+  --wayback \
+  --include-mobile-wayback \
+  --from-year 2024 \
+  --to-year 2024 \
+  --max-wayback-snapshots 1 \
+  --max-snapshots-per-year 5
+```
+
+Полный запуск лучше делать без VPN:
+
+```bash
+python pipelines/flight_status/backfill_historical_status.py \
+  --all \
+  --from-year 2016 \
+  --to-year 2026 \
+  --from-post-id 2500 \
+  --to-post-id 4300 \
+  --concurrency 4 \
+  --request-sleep-seconds 0.3
+```
+
+Если нужно сначала прогнать только официальный архив аэропорта:
+
+```bash
+python pipelines/flight_status/backfill_historical_status.py \
+  --airportus-news \
+  --from-post-id 2500 \
+  --to-post-id 4300
+```
+
+Если нужно только Wayback-табло:
+
+```bash
+python pipelines/flight_status/backfill_historical_status.py \
+  --wayback \
+  --include-mobile-wayback \
+  --from-year 2016 \
+  --to-year 2026
+```
+
+### План объединения датасетов
+
+Новые historical sources пока не заменяют рабочий `dataset_daily_flights.csv`.
+Следующий корректный шаг — построить промежуточную агрегацию:
+
+```text
+data/raw/flight_status/kunashir_historical_sources_v2.csv
+        ↓
+data/interim/flight_status/historical_daily_labels.csv
+```
+
+Предлагаемые правила агрегации:
+
+- `departed`, `arrived`, `in_flight` -> `completed`;
+- `cancelled` -> `cancelled`;
+- `delayed` -> `delayed`;
+- `combined` -> `disrupted`;
+- `scheduled`, `check_in` -> `planned_only`;
+- `unknown` -> `needs_review` или exclude.
+
+После этого нужно сравнить `historical_daily_labels.csv` с Telegram daily labels и вынести конфликтные дни в ручной аудит:
+
+- Telegram говорит `completed`, а официальный/архивный источник говорит `cancelled`;
+- Telegram говорит `cancelled`, а Wayback/табло говорит `departed` или `arrived`;
+- есть `delayed`/`combined`, но нет финального исхода;
+- несколько источников дают разные статусы на один день.
+
+Только после этого стоит собирать новый backend-safe датасет:
+
+```text
+telegram labels + confirmed historical labels + manual review fixes
+        ↓
+data/processed/dataset_daily_flights_v3.csv
+```
+
+Backend нужно переключать на v3 только после проверки конфликтов и фиксации новой `data_version`.
 
 ---
 
