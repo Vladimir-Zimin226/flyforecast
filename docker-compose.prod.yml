@@ -11,6 +11,18 @@ services:
       - "127.0.0.1:8000:8000"
     restart: unless-stopped
 
+  collector:
+    build:
+      context: ./backend
+    container_name: flyforecast-collector
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./pipelines:/app/pipelines:ro
+    command: python /app/pipelines/flight_status/collect_kunashir_status.py --loop --interval-seconds 3600
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend

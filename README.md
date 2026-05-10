@@ -55,6 +55,7 @@
 - тёмная UI-палитра;
 - кастомный календарь выбора даты;
 - backend-safe dataset на основе Telegram-разметки v2.
+- hourly collector статуса рейсов Южно-Сахалинск/Южно-Курильск из табло аэропорта и погоды Open-Meteo.
 
 Текущая модель/логика прогноза — не финальная ML-модель, а MVP baseline `mvp-baseline-001`. LLM не принимает решение о вероятности, а только формулирует объяснение уже рассчитанного результата.
 
@@ -80,6 +81,57 @@
 - data version: `telegram-rule-labels-v2-2026-05-03`.
 
 Важно: это не официальная статистика аэропорта. Это предварительная автоматическая разметка Telegram-истории v2. После ручного аудита и labeler v3 цифры могут измениться.
+
+### Hourly flight status collector
+
+Новый сборщик данных находится в:
+
+```text
+pipelines/flight_status/collect_kunashir_status.py
+```
+
+Он каждый запуск:
+
+- читает онлайн-табло аэропорта Южно-Сахалинска `https://airportus.ru/board/`;
+- выбирает строки по городу `Южно-Курильск` на вылет и прилёт;
+- пробует прочитать источник Авроры из `AURORA_STATUS_URL` (по умолчанию `https://www.flyaurora.ru/`; если сайт отдаёт антибот/не содержит табло, ошибка пишется отдельно);
+- запрашивает текущую погоду Open-Meteo для координат аэропорта Менделеево;
+- дописывает строки наблюдений в CSV.
+
+Основной файл датасета:
+
+```text
+data/raw/flight_status/kunashir_flight_status_hourly.csv
+```
+
+Файл ошибок источников:
+
+```text
+data/raw/flight_status/collection_errors.csv
+```
+
+Ключевые колонки датасета:
+
+- `observed_at`, `observation_date`, `observation_time`;
+- `source`, `source_url`, `direction`;
+- `flight_date`, `flight_time`, `flight_numbers`, `route`;
+- `status_raw`, `status_normalized`, `reason`, `reason_class`;
+- `scheduled_time_raw`, `actual_time_raw`;
+- погодные признаки Open-Meteo: температура, влажность, давление, облачность, осадки, ветер, видимость.
+
+Разовый локальный запуск:
+
+```bash
+python pipelines/flight_status/collect_kunashir_status.py
+```
+
+Непрерывный hourly-режим:
+
+```bash
+python pipelines/flight_status/collect_kunashir_status.py --loop --interval-seconds 3600
+```
+
+В Docker Compose добавлен сервис `collector`, который запускает этот hourly-режим вместе с проектом.
 
 ---
 
