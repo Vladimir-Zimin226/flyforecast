@@ -401,6 +401,25 @@ def parse_article_date(text: str) -> str:
     return ""
 
 
+def parse_article_date_from_url(source_url: str) -> str:
+    patterns = [
+        r"/(20\d{2})-(\d{2})-(\d{2})[-/]",
+        r"/(20\d{2})/(\d{2})/(\d{2})/",
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, source_url)
+        if not match:
+            continue
+        year, month, day = map(int, match.groups())
+        try:
+            return date(year, month, day).isoformat()
+        except ValueError:
+            continue
+
+    return ""
+
+
 def expand_flight_numbers(snippet: str) -> list[str]:
     values: set[str] = set()
 
@@ -522,7 +541,7 @@ def parse_news_article(
     parser = ArticleTextParser()
     parser.feed(html_text)
     text = parser.text
-    article_date = parse_article_date(text)
+    article_date = parse_article_date_from_url(source_url) or parse_article_date(text)
     reason, reason_class = infer_reason_from_article(text)
     observed_at = datetime.now(timezone)
     rows: list[HistoricalSourceRow] = []

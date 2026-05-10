@@ -286,12 +286,18 @@ python pipelines/flight_status/backfill_historical_status.py \
 ### План объединения датасетов
 
 Новые historical sources пока не заменяют рабочий `dataset_daily_flights.csv`.
-Следующий корректный шаг — построить промежуточную агрегацию:
+Для агрегации historical evidence и сборки v3-кандидата добавлен скрипт:
 
 ```text
-data/raw/flight_status/kunashir_historical_sources_v2.csv
+pipelines/flight_status/build_dataset_v3.py
+```
+
+Он строит промежуточную агрегацию:
+
+```text
+data/raw/flight_status/kunashir_historical_sources_v3.csv
         ↓
-data/interim/flight_status/historical_daily_labels.csv
+data/interim/flight_status/historical_daily_labels_v3.csv
 ```
 
 Предлагаемые правила агрегации:
@@ -319,6 +325,36 @@ data/processed/dataset_daily_flights_v3.csv
 ```
 
 Backend нужно переключать на v3 только после проверки конфликтов и фиксации новой `data_version`.
+
+Запуск текущего v3-кандидата:
+
+```bash
+python pipelines/flight_status/build_dataset_v3.py \
+  --historical-sources data/raw/flight_status/kunashir_historical_sources_v3.csv \
+  --historical-daily-labels data/interim/flight_status/historical_daily_labels_v3.csv \
+  --needs-manual-review data/interim/flight_status/needs_manual_review_v3.csv \
+  --dataset-v3 data/processed/dataset_daily_flights_v3.csv \
+  --summary data/interim/flight_status/dataset_v3_summary.txt
+```
+
+Результат последней сборки v3-кандидата:
+
+- `historical_daily_labels_v3.csv`: `124` daily rows;
+- `needs_manual_review_v3.csv`: `39` rows;
+- текущий `dataset_daily_flights.csv`: `699` binary rows;
+- кандидат `dataset_daily_flights_v3.csv`: `728` binary rows;
+- безопасно добавлено без ручного review: `29` rows;
+- v3 status distribution: `completed=389`, `cancelled=339`;
+- backend switch status: `not_applied`.
+
+Причины ручного review:
+
+- `historical_unknown`: `16`;
+- `historical_disruption_without_final_outcome`: `11`;
+- `historical_disruption_with_telegram_binary_outcome`: `10`;
+- `telegram_historical_binary_conflict`: `2`.
+
+Важное ограничение: `dataset_daily_flights_v3.csv` пока является кандидатом. Он не должен автоматически заменять backend dataset, пока не проверен `needs_manual_review_v3.csv`.
 
 ---
 
