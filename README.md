@@ -79,6 +79,12 @@ FLYFORECAST_DATASET_PATH=/app/data/processed/dataset_daily_flights_v3.csv
 
 Важно: данные в `data/` считаются рабочими/ценными и не обязаны коммититься в публичный репозиторий.
 
+Описание текущей прогнозной логики закреплено отдельно:
+
+```text
+docs/baseline_model.md
+```
+
 ---
 
 ## Структура проекта
@@ -166,12 +172,14 @@ frontend/
 
 ```text
 docs/
+├── baseline_model.md
 ├── business_analysis.md
 ├── data_experiments.md
 ├── product_benchmarking.md
 └── prototype.md
 ```
 
+- `docs/baseline_model.md` — как работает текущий `mvp-baseline-001`.
 - `docs/business_analysis.md` — бизнес-анализ MVP.
 - `docs/data_experiments.md` — история источников, датасетов, сборщиков и ML-data экспериментов.
 - `docs/product_benchmarking.md` — продуктовый benchmarking.
