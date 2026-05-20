@@ -285,22 +285,31 @@ Backend нужно переключать на v3 только после про
 Запуск текущего v3-кандидата:
 
 ```bash
-python pipelines/flight_status/build_dataset_v3.py \
-  --historical-sources data/raw/flight_status/kunashir_historical_sources_v3.csv \
-  --historical-daily-labels data/interim/flight_status/historical_daily_labels_v3.csv \
-  --needs-manual-review data/interim/flight_status/needs_manual_review_v3.csv \
-  --dataset-v3 data/processed/dataset_daily_flights_v3.csv \
-  --summary data/interim/flight_status/dataset_v3_summary.txt
+python pipelines/flight_status/build_dataset_v3.py
 ```
 
-Результат последней сборки v3-кандидата:
+По умолчанию скрипт читает:
+
+- `data/raw/flight_status/kunashir_historical_sources_v3.csv`;
+- `data/interim/flight_status/manual_review_v3.xlsx`;
+- `data/interim/flight_status/manual_overrides_v3.csv`.
+
+Ручной review применяется поверх автоматических historical labels:
+
+- binary-строки `completed`/`cancelled` попадают в backend-safe target;
+- `unknown`, `unsure`, `exclude`, `delayed`, `disrupted`, `planned_only` сохраняются в excluded audit и не попадают в target;
+- точечные ручные факты после основной проверки добавляются через `manual_overrides_v3.csv`.
+
+Результат последней сборки v3-кандидата после ручного review:
 
 - `historical_daily_labels_v3.csv`: `124` daily rows;
 - `needs_manual_review_v3.csv`: `39` rows;
+- `manual_review_applied_v3.csv`: `36` rows;
+- `manual_review_excluded_v3.csv`: `4` rows;
 - текущий `dataset_daily_flights.csv`: `699` binary rows;
-- кандидат `dataset_daily_flights_v3.csv`: `728` binary rows;
-- безопасно добавлено без ручного review: `29` rows;
-- v3 status distribution: `completed=389`, `cancelled=339`;
+- кандидат `dataset_daily_flights_v3.csv`: `748` binary rows;
+- v3 status distribution: `completed=400`, `cancelled=348`;
+- ручной override: `2026-05-19` -> `cancelled`, причина `fog`, источник `telegram_manual_review_2026_05`;
 - backend switch status: `not_applied`.
 
 Причины ручного review:
@@ -310,7 +319,7 @@ python pipelines/flight_status/build_dataset_v3.py \
 - `historical_disruption_with_telegram_binary_outcome`: `10`;
 - `telegram_historical_binary_conflict`: `2`.
 
-Важное ограничение: `dataset_daily_flights_v3.csv` пока является кандидатом. Он не должен автоматически заменять backend dataset, пока не проверен `needs_manual_review_v3.csv`.
+Важное ограничение: `dataset_daily_flights_v3.csv` пока является кандидатом. Он уже включает ручную проверку, но не должен автоматически заменять backend dataset, пока не принято решение о переключении `FLYFORECAST_DATASET_PATH`.
 
 ---
 
@@ -605,7 +614,7 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 ## Ближайшие задачи
 
 1. Завершить Data Understanding:
-   - ручной audit labels;
+   - ручной audit labels v3 завершён и применён в `dataset_daily_flights_v3.csv`;
    - labeler v3;
    - фиксация правил разметки.
 

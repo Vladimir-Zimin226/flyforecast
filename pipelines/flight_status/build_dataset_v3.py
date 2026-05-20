@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 
-DATA_VERSION = "telegram-v2-plus-historical-confirmed-v3-2026-05-10"
+DATA_VERSION = "telegram-v2-plus-historical-manual-v3-2026-05-20"
 
 HISTORICAL_TO_DAILY_STATUS = {
     "departed": "completed",
@@ -23,6 +23,8 @@ HISTORICAL_TO_DAILY_STATUS = {
 
 BINARY_STATUSES = {"completed", "cancelled"}
 NON_BINARY_STATUSES = {"delayed", "disrupted", "planned_only", "needs_review"}
+MANUAL_REVIEW_STATUSES = BINARY_STATUSES | NON_BINARY_STATUSES | {"exclude", "unknown", "unsure"}
+MANUAL_EXCLUDE_STATUSES = NON_BINARY_STATUSES | {"exclude", "unknown", "unsure"}
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,10 @@ class Paths:
     current_processed_dataset: Path
     historical_daily_labels: Path
     needs_manual_review: Path
+    manual_review: Path
+    manual_overrides: Path
+    manual_review_applied: Path
+    manual_review_excluded: Path
     dataset_v3: Path
     summary: Path
 
@@ -42,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--historical-sources",
-        default="data/raw/flight_status/kunashir_historical_sources_v2.csv",
+        default="data/raw/flight_status/kunashir_historical_sources_v3.csv",
     )
     parser.add_argument(
         "--telegram-daily-labels",
@@ -54,11 +60,27 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--historical-daily-labels",
-        default="data/interim/flight_status/historical_daily_labels.csv",
+        default="data/interim/flight_status/historical_daily_labels_v3.csv",
     )
     parser.add_argument(
         "--needs-manual-review",
-        default="data/interim/flight_status/needs_manual_review.csv",
+        default="data/interim/flight_status/needs_manual_review_v3.csv",
+    )
+    parser.add_argument(
+        "--manual-review",
+        default="data/interim/flight_status/manual_review_v3.xlsx",
+    )
+    parser.add_argument(
+        "--manual-overrides",
+        default="data/interim/flight_status/manual_overrides_v3.csv",
+    )
+    parser.add_argument(
+        "--manual-review-applied",
+        default="data/interim/flight_status/manual_review_applied_v3.csv",
+    )
+    parser.add_argument(
+        "--manual-review-excluded",
+        default="data/interim/flight_status/manual_review_excluded_v3.csv",
     )
     parser.add_argument(
         "--dataset-v3",
@@ -297,6 +319,104 @@ def make_processed_row(date_value: str, status: str, historical_row: pd.Series) 
     }
 
 
+def make_manual_processed_row(manual_row: pd.Series) -> dict:
+    ts = pd.Timestamp(manual_row["date"])
+    status = normalize_text(manual_row["manual_status"]).lower()
+    confidence = normalize_text(manual_row.get("manual_confidence", "")) or "medium"
+    reason_class = normalize_text(manual_row.get("manual_reason_class", "")) or "unknown"
+    source = normalize_text(manual_row.get("manual_source", "")) or "manual_review_v3"
+    raw_evidence_count = manual_row.get("manual_evidence_count", 1)
+    evidence_count = 1 if pd.isna(raw_evidence_count) or raw_evidence_count == "" else int(raw_evidence_count)
+    month_decade = (ts.day - 1) // 10 + 1
+
+    return {
+        "date": ts.date().isoformat(),
+        "status": status,
+        "is_flight_completed": 1 if status == "completed" else 0,
+        "label_confidence": confidence,
+        "reason_class": reason_class,
+        "message_count": evidence_count,
+        "transport_types": "airplane",
+        "event_date_sources": source,
+        "year": ts.year,
+        "month": ts.month,
+        "day": ts.day,
+        "day_of_year": ts.dayofyear,
+        "month_decade": month_decade,
+        "season": season_for_month(ts.month),
+        "data_version": DATA_VERSION,
+    }
+
+
+def read_manual_table(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    if path.suffix.lower() in {".xlsx", ".xlsm", ".xls"}:
+        return pd.read_excel(path)
+    return pd.read_csv(path)
+
+
+def load_manual_review(path: Path, source_name: str) -> pd.DataFrame:
+    df = read_manual_table(path)
+    if df.empty:
+        return pd.DataFrame()
+
+    required_columns = {"date", "manual_status"}
+    missing = sorted(required_columns - set(df.columns))
+    if missing:
+        raise ValueError(f"{path} is missing required columns: {', '.join(missing)}")
+
+    df = df.copy().fillna("")
+    df["date"] = pd.to_datetime(df["date"]).dt.date.astype(str)
+    df["manual_status"] = df["manual_status"].astype(str).str.strip().str.lower()
+    invalid_statuses = sorted(set(df["manual_status"]) - MANUAL_REVIEW_STATUSES - {""})
+    if invalid_statuses:
+        raise ValueError(f"{path} has unsupported manual_status values: {invalid_statuses}")
+
+    if "manual_source" not in df.columns:
+        df["manual_source"] = source_name
+    else:
+        df["manual_source"] = df["manual_source"].replace("", source_name)
+
+    return df
+
+
+def load_manual_reviews(manual_review_path: Path, overrides_path: Path) -> pd.DataFrame:
+    frames = [
+        load_manual_review(manual_review_path, "manual_review_v3"),
+        load_manual_review(overrides_path, "manual_override_v3"),
+    ]
+    frames = [frame for frame in frames if not frame.empty]
+    if not frames:
+        return pd.DataFrame()
+
+    manual = pd.concat(frames, ignore_index=True)
+    manual = manual[manual["manual_status"] != ""].copy()
+    manual = manual.drop_duplicates(subset=["date"], keep="last")
+    return manual.sort_values("date").reset_index(drop=True)
+
+
+def apply_manual_review(dataset: pd.DataFrame, manual_review: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    if manual_review.empty:
+        return dataset, pd.DataFrame(), pd.DataFrame()
+
+    manual = manual_review.copy()
+    applied = manual[manual["manual_status"].isin(BINARY_STATUSES)].copy()
+    excluded = manual[manual["manual_status"].isin(MANUAL_EXCLUDE_STATUSES)].copy()
+
+    if applied.empty:
+        return dataset, applied, excluded
+
+    result = dataset.copy()
+    result["date"] = result["date"].astype(str)
+    applied_dates = set(applied["date"].astype(str))
+    result = result[~result["date"].isin(applied_dates)].copy()
+    manual_rows = pd.DataFrame([make_manual_processed_row(row) for _, row in applied.iterrows()])
+    result = pd.concat([result, manual_rows], ignore_index=True)
+    result = result.sort_values("date").reset_index(drop=True)
+    return result, applied.sort_values("date").reset_index(drop=True), excluded.sort_values("date").reset_index(drop=True)
+
+
 def build_dataset_v3(
     current_processed: pd.DataFrame,
     historical_daily: pd.DataFrame,
@@ -333,6 +453,8 @@ def write_summary(
     path: Path,
     historical_daily: pd.DataFrame,
     needs_review: pd.DataFrame,
+    manual_applied: pd.DataFrame,
+    manual_excluded: pd.DataFrame,
     dataset_v3: pd.DataFrame,
     current_processed: pd.DataFrame,
 ) -> None:
@@ -346,6 +468,16 @@ def write_summary(
         if not needs_review.empty
         else {}
     )
+    manual_counts = (
+        manual_applied["manual_status"].value_counts(dropna=False).to_dict()
+        if not manual_applied.empty
+        else {}
+    )
+    manual_excluded_counts = (
+        manual_excluded["manual_status"].value_counts(dropna=False).to_dict()
+        if not manual_excluded.empty
+        else {}
+    )
 
     lines = [
         f"generated_at={datetime.now().isoformat(timespec='seconds')}",
@@ -357,13 +489,18 @@ def write_summary(
         f"needs_manual_review_rows={len(needs_review)}",
         f"needs_manual_review_reason_counts={review_counts}",
         "",
+        f"manual_review_applied_rows={len(manual_applied)}",
+        f"manual_review_applied_status_counts={manual_counts}",
+        f"manual_review_excluded_rows={len(manual_excluded)}",
+        f"manual_review_excluded_status_counts={manual_excluded_counts}",
+        "",
         f"current_processed_rows={len(current_processed)}",
         f"dataset_v3_rows={len(dataset_v3)}",
         f"dataset_v3_appended_rows={appended_count}",
         f"dataset_v3_status_counts={status_counts}",
         "",
         "backend_switch_status=not_applied",
-        "note=dataset_daily_flights_v3.csv is a candidate. Review needs_manual_review.csv before switching backend.",
+        "note=dataset_daily_flights_v3.csv includes manual binary review rows and is still a switch candidate.",
     ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -376,6 +513,10 @@ def main() -> None:
         current_processed_dataset=Path(args.current_processed_dataset),
         historical_daily_labels=Path(args.historical_daily_labels),
         needs_manual_review=Path(args.needs_manual_review),
+        manual_review=Path(args.manual_review),
+        manual_overrides=Path(args.manual_overrides),
+        manual_review_applied=Path(args.manual_review_applied),
+        manual_review_excluded=Path(args.manual_review_excluded),
         dataset_v3=Path(args.dataset_v3),
         summary=Path(args.summary),
     )
@@ -386,7 +527,9 @@ def main() -> None:
 
     historical_daily = build_historical_daily_labels(historical)
     needs_review = build_needs_manual_review(historical_daily, telegram_daily)
+    manual_review = load_manual_reviews(paths.manual_review, paths.manual_overrides)
     dataset_v3 = build_dataset_v3(current_processed, historical_daily, needs_review)
+    dataset_v3, manual_applied, manual_excluded = apply_manual_review(dataset_v3, manual_review)
 
     paths.historical_daily_labels.parent.mkdir(parents=True, exist_ok=True)
     historical_daily.to_csv(
@@ -401,6 +544,19 @@ def main() -> None:
         encoding="utf-8-sig",
         quoting=csv.QUOTE_MINIMAL,
     )
+    paths.manual_review_applied.parent.mkdir(parents=True, exist_ok=True)
+    manual_applied.to_csv(
+        paths.manual_review_applied,
+        index=False,
+        encoding="utf-8-sig",
+        quoting=csv.QUOTE_MINIMAL,
+    )
+    manual_excluded.to_csv(
+        paths.manual_review_excluded,
+        index=False,
+        encoding="utf-8-sig",
+        quoting=csv.QUOTE_MINIMAL,
+    )
     paths.dataset_v3.parent.mkdir(parents=True, exist_ok=True)
     dataset_v3.to_csv(
         paths.dataset_v3,
@@ -408,10 +564,12 @@ def main() -> None:
         encoding="utf-8-sig",
         quoting=csv.QUOTE_MINIMAL,
     )
-    write_summary(paths.summary, historical_daily, needs_review, dataset_v3, current_processed)
+    write_summary(paths.summary, historical_daily, needs_review, manual_applied, manual_excluded, dataset_v3, current_processed)
 
     print(f"Historical daily labels: {paths.historical_daily_labels} ({len(historical_daily)} rows)")
     print(f"Needs manual review:     {paths.needs_manual_review} ({len(needs_review)} rows)")
+    print(f"Manual review applied:   {paths.manual_review_applied} ({len(manual_applied)} rows)")
+    print(f"Manual review excluded:  {paths.manual_review_excluded} ({len(manual_excluded)} rows)")
     print(f"Dataset v3 candidate:    {paths.dataset_v3} ({len(dataset_v3)} rows)")
     print(f"Summary:                 {paths.summary}")
     print()
@@ -420,6 +578,12 @@ def main() -> None:
     print()
     print("Manual review reasons:")
     print(needs_review["review_reason"].value_counts(dropna=False) if not needs_review.empty else "none")
+    print()
+    print("Applied manual review status distribution:")
+    print(manual_applied["manual_status"].value_counts(dropna=False) if not manual_applied.empty else "none")
+    print()
+    print("Excluded manual review status distribution:")
+    print(manual_excluded["manual_status"].value_counts(dropna=False) if not manual_excluded.empty else "none")
     print()
     print("Dataset v3 status distribution:")
     print(dataset_v3["status"].value_counts(dropna=False))
