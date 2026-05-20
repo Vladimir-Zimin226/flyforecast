@@ -1,6 +1,7 @@
 .env
 *.session
 *.session-journal
+flight_status_snapshot_*.tar.gz
 
 data/raw/
 data/interim/

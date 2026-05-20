@@ -291,8 +291,15 @@ python pipelines/flight_status/build_dataset_v3.py
 По умолчанию скрипт читает:
 
 - `data/raw/flight_status/kunashir_historical_sources_v3.csv`;
+- `data/raw/flight_status/kunashir_flight_status_hourly.csv`;
 - `data/interim/flight_status/manual_review_v3.xlsx`;
 - `data/interim/flight_status/manual_overrides_v3.csv`.
+
+Hourly airport board применяется отдельным слоем:
+
+- `departed`, `arrived`, `in_flight` -> `completed`;
+- `combined` без фактического вылета/прилёта за эту дату -> `cancelled`;
+- `scheduled`-only сохраняется в excluded audit и не попадает в target.
 
 Ручной review применяется поверх автоматических historical labels:
 
@@ -304,11 +311,13 @@ python pipelines/flight_status/build_dataset_v3.py
 
 - `historical_daily_labels_v3.csv`: `124` daily rows;
 - `needs_manual_review_v3.csv`: `39` rows;
+- `board_daily_labels_v3.csv`: `12` rows;
+- `board_daily_excluded_v3.csv`: `1` row;
 - `manual_review_applied_v3.csv`: `36` rows;
 - `manual_review_excluded_v3.csv`: `4` rows;
 - текущий `dataset_daily_flights.csv`: `699` binary rows;
-- кандидат `dataset_daily_flights_v3.csv`: `748` binary rows;
-- v3 status distribution: `completed=400`, `cancelled=348`;
+- кандидат `dataset_daily_flights_v3.csv`: `759` binary rows;
+- v3 status distribution: `completed=411`, `cancelled=348`;
 - ручной override: `2026-05-19` -> `cancelled`, причина `fog`, источник `telegram_manual_review_2026_05`;
 - backend switch status: `not_applied`.
 

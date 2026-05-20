@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 
-DATA_VERSION = "telegram-v2-plus-historical-manual-v3-2026-05-20"
+DATA_VERSION = "telegram-v2-plus-historical-board-manual-v3-2026-05-20"
 
 HISTORICAL_TO_DAILY_STATUS = {
     "departed": "completed",
@@ -25,6 +25,7 @@ BINARY_STATUSES = {"completed", "cancelled"}
 NON_BINARY_STATUSES = {"delayed", "disrupted", "planned_only", "needs_review"}
 MANUAL_REVIEW_STATUSES = BINARY_STATUSES | NON_BINARY_STATUSES | {"exclude", "unknown", "unsure"}
 MANUAL_EXCLUDE_STATUSES = NON_BINARY_STATUSES | {"exclude", "unknown", "unsure"}
+BOARD_COMPLETED_STATUSES = {"departed", "arrived", "in_flight"}
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,9 @@ class Paths:
     current_processed_dataset: Path
     historical_daily_labels: Path
     needs_manual_review: Path
+    board_hourly_status: Path
+    board_daily_labels: Path
+    board_daily_excluded: Path
     manual_review: Path
     manual_overrides: Path
     manual_review_applied: Path
@@ -65,6 +69,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--needs-manual-review",
         default="data/interim/flight_status/needs_manual_review_v3.csv",
+    )
+    parser.add_argument(
+        "--board-hourly-status",
+        default="data/raw/flight_status/kunashir_flight_status_hourly.csv",
+    )
+    parser.add_argument(
+        "--board-daily-labels",
+        default="data/interim/flight_status/board_daily_labels_v3.csv",
+    )
+    parser.add_argument(
+        "--board-daily-excluded",
+        default="data/interim/flight_status/board_daily_excluded_v3.csv",
     )
     parser.add_argument(
         "--manual-review",
@@ -348,6 +364,113 @@ def make_manual_processed_row(manual_row: pd.Series) -> dict:
     }
 
 
+def make_board_processed_row(board_row: pd.Series) -> dict:
+    ts = pd.Timestamp(board_row["date"])
+    status = normalize_text(board_row["board_status"]).lower()
+    month_decade = (ts.day - 1) // 10 + 1
+
+    return {
+        "date": ts.date().isoformat(),
+        "status": status,
+        "is_flight_completed": 1 if status == "completed" else 0,
+        "label_confidence": board_row["label_confidence"],
+        "reason_class": board_row["reason_class"] or "unknown",
+        "message_count": int(board_row["evidence_count"]),
+        "transport_types": "airplane",
+        "event_date_sources": "airportus_board_hourly",
+        "year": ts.year,
+        "month": ts.month,
+        "day": ts.day,
+        "day_of_year": ts.dayofyear,
+        "month_decade": month_decade,
+        "season": season_for_month(ts.month),
+        "data_version": DATA_VERSION,
+    }
+
+
+def choose_board_daily_status(statuses: set[str]) -> str:
+    if statuses & BOARD_COMPLETED_STATUSES:
+        return "completed"
+    if "cancelled" in statuses or "combined" in statuses:
+        return "cancelled"
+    if "delayed" in statuses:
+        return "needs_review"
+    if "scheduled" in statuses or "check_in" in statuses:
+        return "planned_only"
+    return "needs_review"
+
+
+def build_board_daily_labels(board_hourly: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if board_hourly.empty or "flight_date" not in board_hourly.columns:
+        return pd.DataFrame(), pd.DataFrame()
+
+    board = board_hourly.copy().fillna("")
+    board["flight_date"] = board["flight_date"].astype(str)
+    board = board[board["flight_date"].str.len() > 0].copy()
+    if board.empty:
+        return pd.DataFrame(), pd.DataFrame()
+
+    rows: list[dict] = []
+    for flight_date, group in board.groupby("flight_date", sort=True):
+        statuses = set(group["status_normalized"].dropna().astype(str).str.strip())
+        statuses.discard("")
+        daily_status = choose_board_daily_status(statuses)
+
+        if daily_status == "cancelled" and "combined" in statuses:
+            reason_class = "schedule_combined"
+        else:
+            reason_class = join_unique(group.get("reason_class", pd.Series(dtype=str))) or "unknown"
+
+        rows.append(
+            {
+                "date": flight_date,
+                "board_status": daily_status,
+                "binary_status": daily_status if daily_status in BINARY_STATUSES else "",
+                "label_confidence": "high" if daily_status in BINARY_STATUSES else "needs_review",
+                "evidence_count": len(group),
+                "source_types": join_unique(group.get("source", pd.Series(dtype=str))),
+                "source_urls": join_unique(group.get("source_url", pd.Series(dtype=str))),
+                "flight_numbers": join_unique(group.get("flight_numbers", pd.Series(dtype=str))),
+                "directions": join_unique(group.get("direction", pd.Series(dtype=str))),
+                "reason_class": reason_class,
+                "evidence_statuses": ";".join(sorted(statuses)),
+                "first_observed_at": normalize_text(group["observed_at"].min()) if "observed_at" in group else "",
+                "last_observed_at": normalize_text(group["observed_at"].max()) if "observed_at" in group else "",
+                "raw_evidence_sample": " | ".join(
+                    group["raw_row_text"]
+                    .dropna()
+                    .astype(str)
+                    .map(lambda value: normalize_text(value)[:300])
+                    .head(8)
+                    .tolist()
+                ),
+            }
+        )
+
+    labels = pd.DataFrame(rows)
+    applied = labels[labels["binary_status"].isin(BINARY_STATUSES)].copy().reset_index(drop=True)
+    excluded = labels[~labels["binary_status"].isin(BINARY_STATUSES)].copy().reset_index(drop=True)
+    return applied, excluded
+
+
+def apply_board_daily_labels(dataset: pd.DataFrame, board_daily: pd.DataFrame) -> pd.DataFrame:
+    if board_daily.empty:
+        return dataset
+
+    applied = board_daily[board_daily["binary_status"].isin(BINARY_STATUSES)].copy()
+    if applied.empty:
+        return dataset
+
+    result = dataset.copy()
+    result["date"] = result["date"].astype(str)
+    applied_dates = set(applied["date"].astype(str))
+    result = result[~result["date"].isin(applied_dates)].copy()
+    board_rows = pd.DataFrame([make_board_processed_row(row) for _, row in applied.iterrows()])
+    result = pd.concat([result, board_rows], ignore_index=True)
+    result = result.sort_values("date").reset_index(drop=True)
+    return result
+
+
 def read_manual_table(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
@@ -453,6 +576,8 @@ def write_summary(
     path: Path,
     historical_daily: pd.DataFrame,
     needs_review: pd.DataFrame,
+    board_daily: pd.DataFrame,
+    board_excluded: pd.DataFrame,
     manual_applied: pd.DataFrame,
     manual_excluded: pd.DataFrame,
     dataset_v3: pd.DataFrame,
@@ -478,6 +603,16 @@ def write_summary(
         if not manual_excluded.empty
         else {}
     )
+    board_counts = (
+        board_daily["board_status"].value_counts(dropna=False).to_dict()
+        if not board_daily.empty
+        else {}
+    )
+    board_excluded_counts = (
+        board_excluded["board_status"].value_counts(dropna=False).to_dict()
+        if not board_excluded.empty
+        else {}
+    )
 
     lines = [
         f"generated_at={datetime.now().isoformat(timespec='seconds')}",
@@ -488,6 +623,11 @@ def write_summary(
         "",
         f"needs_manual_review_rows={len(needs_review)}",
         f"needs_manual_review_reason_counts={review_counts}",
+        "",
+        f"board_daily_applied_rows={len(board_daily)}",
+        f"board_daily_applied_status_counts={board_counts}",
+        f"board_daily_excluded_rows={len(board_excluded)}",
+        f"board_daily_excluded_status_counts={board_excluded_counts}",
         "",
         f"manual_review_applied_rows={len(manual_applied)}",
         f"manual_review_applied_status_counts={manual_counts}",
@@ -500,7 +640,7 @@ def write_summary(
         f"dataset_v3_status_counts={status_counts}",
         "",
         "backend_switch_status=not_applied",
-        "note=dataset_daily_flights_v3.csv includes manual binary review rows and is still a switch candidate.",
+        "note=dataset_daily_flights_v3.csv includes hourly board labels plus manual binary review rows and is still a switch candidate.",
     ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -513,6 +653,9 @@ def main() -> None:
         current_processed_dataset=Path(args.current_processed_dataset),
         historical_daily_labels=Path(args.historical_daily_labels),
         needs_manual_review=Path(args.needs_manual_review),
+        board_hourly_status=Path(args.board_hourly_status),
+        board_daily_labels=Path(args.board_daily_labels),
+        board_daily_excluded=Path(args.board_daily_excluded),
         manual_review=Path(args.manual_review),
         manual_overrides=Path(args.manual_overrides),
         manual_review_applied=Path(args.manual_review_applied),
@@ -524,11 +667,14 @@ def main() -> None:
     historical = pd.read_csv(paths.historical_sources)
     telegram_daily = pd.read_csv(paths.telegram_daily_labels)
     current_processed = pd.read_csv(paths.current_processed_dataset)
+    board_hourly = pd.read_csv(paths.board_hourly_status) if paths.board_hourly_status.exists() else pd.DataFrame()
 
     historical_daily = build_historical_daily_labels(historical)
     needs_review = build_needs_manual_review(historical_daily, telegram_daily)
+    board_daily, board_excluded = build_board_daily_labels(board_hourly)
     manual_review = load_manual_reviews(paths.manual_review, paths.manual_overrides)
     dataset_v3 = build_dataset_v3(current_processed, historical_daily, needs_review)
+    dataset_v3 = apply_board_daily_labels(dataset_v3, board_daily)
     dataset_v3, manual_applied, manual_excluded = apply_manual_review(dataset_v3, manual_review)
 
     paths.historical_daily_labels.parent.mkdir(parents=True, exist_ok=True)
@@ -540,6 +686,19 @@ def main() -> None:
     )
     needs_review.to_csv(
         paths.needs_manual_review,
+        index=False,
+        encoding="utf-8-sig",
+        quoting=csv.QUOTE_MINIMAL,
+    )
+    paths.board_daily_labels.parent.mkdir(parents=True, exist_ok=True)
+    board_daily.to_csv(
+        paths.board_daily_labels,
+        index=False,
+        encoding="utf-8-sig",
+        quoting=csv.QUOTE_MINIMAL,
+    )
+    board_excluded.to_csv(
+        paths.board_daily_excluded,
         index=False,
         encoding="utf-8-sig",
         quoting=csv.QUOTE_MINIMAL,
@@ -564,10 +723,22 @@ def main() -> None:
         encoding="utf-8-sig",
         quoting=csv.QUOTE_MINIMAL,
     )
-    write_summary(paths.summary, historical_daily, needs_review, manual_applied, manual_excluded, dataset_v3, current_processed)
+    write_summary(
+        paths.summary,
+        historical_daily,
+        needs_review,
+        board_daily,
+        board_excluded,
+        manual_applied,
+        manual_excluded,
+        dataset_v3,
+        current_processed,
+    )
 
     print(f"Historical daily labels: {paths.historical_daily_labels} ({len(historical_daily)} rows)")
     print(f"Needs manual review:     {paths.needs_manual_review} ({len(needs_review)} rows)")
+    print(f"Board daily labels:      {paths.board_daily_labels} ({len(board_daily)} rows)")
+    print(f"Board daily excluded:    {paths.board_daily_excluded} ({len(board_excluded)} rows)")
     print(f"Manual review applied:   {paths.manual_review_applied} ({len(manual_applied)} rows)")
     print(f"Manual review excluded:  {paths.manual_review_excluded} ({len(manual_excluded)} rows)")
     print(f"Dataset v3 candidate:    {paths.dataset_v3} ({len(dataset_v3)} rows)")
@@ -578,6 +749,12 @@ def main() -> None:
     print()
     print("Manual review reasons:")
     print(needs_review["review_reason"].value_counts(dropna=False) if not needs_review.empty else "none")
+    print()
+    print("Applied board daily status distribution:")
+    print(board_daily["board_status"].value_counts(dropna=False) if not board_daily.empty else "none")
+    print()
+    print("Excluded board daily status distribution:")
+    print(board_excluded["board_status"].value_counts(dropna=False) if not board_excluded.empty else "none")
     print()
     print("Applied manual review status distribution:")
     print(manual_applied["manual_status"].value_counts(dropna=False) if not manual_applied.empty else "none")

@@ -20,7 +20,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./pipelines:/app/pipelines:ro
-    command: python /app/pipelines/flight_status/collect_kunashir_status.py --loop --interval-seconds 3600
+    command: python /app/pipelines/flight_status/collect_kunashir_status.py --loop --interval-seconds 3600 --skip-aurora
     restart: unless-stopped
 
   frontend:
