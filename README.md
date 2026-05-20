@@ -174,6 +174,7 @@ frontend/
 docs/
 ├── baseline_model.md
 ├── business_analysis.md
+├── dataset_preparation.md
 ├── data_experiments.md
 ├── product_benchmarking.md
 └── prototype.md
@@ -181,6 +182,7 @@ docs/
 
 - `docs/baseline_model.md` — как работает текущий `mvp-baseline-001`.
 - `docs/business_analysis.md` — бизнес-анализ MVP.
+- `docs/dataset_preparation.md` — отчёт по подготовке датасета для ML-задачи.
 - `docs/data_experiments.md` — история источников, датасетов, сборщиков и ML-data экспериментов.
 - `docs/product_benchmarking.md` — продуктовый benchmarking.
 - `docs/prototype.md` — описание продуктового прототипа.
