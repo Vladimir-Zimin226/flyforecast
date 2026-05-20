@@ -2,10 +2,18 @@ import argparse
 import asyncio
 import csv
 import sqlite3
+import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Iterable
 from zoneinfo import ZoneInfo
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+for candidate in (PROJECT_ROOT, PROJECT_ROOT / "backend"):
+    if (candidate / "app").exists():
+        sys.path.insert(0, str(candidate))
+        break
 
 from app.config import get_settings
 from app.services.history import get_historical_snapshot
