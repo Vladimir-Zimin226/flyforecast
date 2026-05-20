@@ -23,363 +23,61 @@
 2. проходит временную тестовую аутентификацию;
 3. выбирает дату от сегодня до +365 дней;
 4. нажимает «Узнать вероятность вылета»;
-5. получает:
-   - ответ «Да» или «Нет»;
-   - вероятность выполнения рейса;
-   - уровень уверенности;
-   - короткое объяснение;
-   - дисклеймер;
+5. получает ответ, вероятность, уверенность, объяснение и дисклеймер;
 6. после двух прогнозов видит CTA на Telegram-канал проекта.
 
 ---
 
 ## Текущий статус
 
-На текущем этапе сделан первый работающий вертикальный MVP-срез:
+Сделан первый работающий vertical slice:
 
 - frontend на React/Vite;
 - backend на FastAPI;
-- запуск через Docker Compose;
-- production-deploy на сервере;
-- доступ через домен `https://flyforecast.ru`;
+- Docker Compose для dev/prod;
+- production deploy на сервере;
+- доступ через `https://flyforecast.ru`;
 - HTTPS через Let's Encrypt / Certbot;
 - reverse proxy через nginx;
 - временная тестовая аутентификация;
 - endpoint прогноза `/predict?date=YYYY-MM-DD`;
-- подключение Open-Meteo forecast API;
-- подключение GigaChat API для пользовательского объяснения;
-- baseline-расчёт вероятности;
+- Open-Meteo forecast API;
+- GigaChat API для пользовательского объяснения;
+- baseline-расчёт вероятности `mvp-baseline-001`;
 - логирование прогнозов в JSONL;
-- карточка результата на frontend;
-- CTA на Telegram после второго прогноза;
-- тёмная UI-палитра;
-- кастомный календарь выбора даты;
-- backend-safe dataset на основе Telegram-разметки v2.
-- hourly collector статуса рейсов Южно-Сахалинск/Южно-Курильск из табло аэропорта и погоды Open-Meteo.
-- forecast monitor: ежедневный ledger прогнозов, фактов по табло и метрик качества.
+- hourly collector статусов рейсов по табло аэропорта;
+- forecast monitor для ledger прогнозов, фактов и метрик качества;
+- рабочий v3 dataset с ручной проверкой и board evidence.
 
-Текущая модель/логика прогноза — не финальная ML-модель, а MVP baseline `mvp-baseline-001`. LLM не принимает решение о вероятности, а только формулирует объяснение уже рассчитанного результата.
+LLM не принимает решение о вероятности, а только формулирует объяснение уже рассчитанного результата.
 
 ---
 
 ## Данные
 
-Данные проекта собираются слоями. Важно различать текущий backend-safe датасет,
-сырые свидетельства из новых источников и будущий объединённый датасет.
-
-### Текущий рабочий датасет
-
-Первый рабочий исторический датасет был собран из Telegram-канала
-«Аэропорт на Кунашире(НЕофициально)» / `t.me/aeroportuk`.
-
-Текущий источник для backend:
+Подробная история работы с данными вынесена в отдельный документ:
 
 ```text
-/data/processed/dataset_daily_flights.csv
+docs/data_experiments.md
 ```
 
-Текущий backend-safe датасет:
+Там зафиксированы:
 
-- период: `2018-03-22` — `2026-04-07`;
-- всего confirmed binary flight-days: `699`;
-- `completed`: `381`;
-- `cancelled`: `318`;
-- доля отмен среди confirmed-наблюдений: около `45.5%`;
-- data version: `telegram-rule-labels-v2-2026-05-03`.
+- первый Telegram dataset;
+- historical backfill из Wayback, airportus news и media seed;
+- hourly collector онлайн-табло;
+- сборка `dataset_daily_flights_v3.csv`;
+- ручной review спорных вылетов/невылетов;
+- forecast monitor;
+- `training_dataset_v1.csv` с погодой Open-Meteo Archive, календарём и rolling-признаками.
 
-Важно: это не официальная статистика аэропорта. Это предварительная автоматическая разметка Telegram-истории v2. После ручного аудита и labeler v3 цифры могут измениться.
+Текущий production dataset задаётся через:
 
-### История источников
-
-На момент разработки MVP использовались и проверялись такие источники:
-
-- Telegram `t.me/aeroportuk`: основной исторический источник для backend-safe dataset v2. Даёт длинную историю, но является неофициальным источником и требует аудита правил разметки.
-- Онлайн-табло аэропорта Южно-Сахалинска `https://airportus.ru/board/`: официальный текущий источник статуса рейсов. Используется hourly collector для сбора данных вперёд во времени.
-- Архив Wayback Machine для `airportus.ru/board/` и `m.airportus.ru/board/`: архивные снимки официального табло, полезные для ретроспективных подтверждений статуса рейса.
-- Официальные новости аэропорта `airportus.ru/news/post/{id}/`: источник отдельных подтверждённых отмен, задержек и изменений расписания. Если прямой запрос получает антибот-страницу, backfill-скрипт пробует Wayback-копию новости.
-- Местные СМИ ASTV и Sakh.online: вторичный источник, часто ссылающийся на онлайн-табло аэропорта. Используется как дополнительный evidence layer, а не как единственный источник истины.
-- TASS и Aviaport: точечные вторичные источники по отдельным сбоям/задержкам.
-- Сайт авиакомпании Аврора `flyaurora.ru`: проверялся как потенциальный источник, но на практике не дал стабильного публичного табло статусов для серверного парсинга. Поэтому подключён только как best-effort источник в hourly collector через `AURORA_STATUS_URL`.
-
-Текущая позиция по качеству данных: Telegram остаётся рабочим baseline-источником для backend, а официальные airportus/Wayback/news и media seed используются как слой подтверждений, который должен помочь собрать `dataset_daily_flights_v3.csv`.
-
-### Hourly flight status collector
-
-Новый сборщик данных находится в:
-
-```text
-pipelines/flight_status/collect_kunashir_status.py
+```env
+FLYFORECAST_DATASET_PATH=/app/data/processed/dataset_daily_flights_v3.csv
 ```
 
-Он каждый запуск:
-
-- читает онлайн-табло аэропорта Южно-Сахалинска `https://airportus.ru/board/`;
-- выбирает строки по городу `Южно-Курильск` на вылет и прилёт;
-- пробует прочитать источник Авроры из `AURORA_STATUS_URL` (по умолчанию `https://www.flyaurora.ru/`; если сайт отдаёт антибот/не содержит табло, ошибка пишется отдельно);
-- запрашивает текущую погоду Open-Meteo для координат аэропорта Менделеево;
-- дописывает строки наблюдений в CSV.
-
-Основной файл датасета:
-
-```text
-data/raw/flight_status/kunashir_flight_status_hourly.csv
-```
-
-Файл ошибок источников:
-
-```text
-data/raw/flight_status/collection_errors.csv
-```
-
-Ключевые колонки датасета:
-
-- `observed_at`, `observation_date`, `observation_time`;
-- `source`, `source_url`, `direction`;
-- `flight_date`, `flight_time`, `flight_numbers`, `route`;
-- `status_raw`, `status_normalized`, `reason`, `reason_class`;
-- `scheduled_time_raw`, `actual_time_raw`;
-- погодные признаки Open-Meteo: температура, влажность, давление, облачность, осадки, ветер, видимость.
-
-Разовый локальный запуск:
-
-```bash
-python pipelines/flight_status/collect_kunashir_status.py
-```
-
-Непрерывный hourly-режим:
-
-```bash
-python pipelines/flight_status/collect_kunashir_status.py --loop --interval-seconds 3600
-```
-
-В Docker Compose добавлен сервис `collector`, который запускает этот hourly-режим вместе с проектом.
-
-В compose collector запускается с `--skip-aurora`, чтобы не шуметь SSL-ошибками от сайта Авроры. Основной источник `airportus` остаётся включённым.
-
-### Forecast monitor
-
-Монитор качества прогнозов находится в:
-
-```text
-pipelines/evaluation/forecast_monitor.py
-```
-
-Он не вызывает GigaChat и не дёргает публичный `/predict`. Вместо этого напрямую использует backend-логику `history`, `weather`, `predictor` и пишет неизменяемый журнал прогнозов в SQLite.
-
-По умолчанию монитор:
-
-- начиная с 06:00 по времени аэропорта создаёт прогнозы на горизонты `0..45`, `60`, `90` дней;
-- не дублирует прогнозы за тот же день, `model_version` и `data_version`;
-- читает фактические исходы из `data/raw/flight_status/kunashir_flight_status_hourly.csv`;
-- финализирует outcome только после лага `D+2`, чтобы табло успело показать переносы, совмещения и фактические вылеты;
-- считает `hit`, `Brier score`, absolute error и агрегаты по horizon bucket.
-
-Основная база:
-
-```text
-data/interim/evaluation/forecast_monitor.sqlite
-```
-
-CSV exports для анализа:
-
-```text
-data/interim/evaluation/exports/forecast_prediction_runs.csv
-data/interim/evaluation/exports/forecast_predictions.csv
-data/interim/evaluation/exports/forecast_outcomes.csv
-data/interim/evaluation/exports/forecast_evaluations.csv
-data/interim/evaluation/exports/forecast_metrics_summary.csv
-```
-
-Разовый запуск:
-
-```bash
-python pipelines/evaluation/forecast_monitor.py
-```
-
-Непрерывный режим:
-
-```bash
-python pipelines/evaluation/forecast_monitor.py --loop --interval-seconds 3600
-```
-
-В Docker Compose добавлен сервис `forecast_monitor`, который запускает монитор вместе с проектом.
-
-### Historical flight status backfill
-
-Для ретроспективного поиска подтверждений по старым рейсам добавлен отдельный скрипт:
-
-```text
-pipelines/flight_status/backfill_historical_status.py
-```
-
-Он собирает не финальные labels, а сырые свидетельства из источников:
-
-- Wayback snapshots онлайн-табло `airportus.ru/board/` и `m.airportus.ru/board/`;
-- официальный архив новостей `airportus.ru/news/post/{id}/`;
-- fallback на Wayback для новостей airportus, если прямой запрос получает антибот-страницу;
-- seed-список статей ASTV, Sakh.online, TASS, Aviaport.
-
-Основной выходной файл:
-
-```text
-data/raw/flight_status/kunashir_historical_sources.csv
-```
-
-Ошибки:
-
-```text
-data/raw/flight_status/historical_backfill_errors.csv
-```
-
-Последний успешный полный прогон `v2`:
-
-```bash
-python pipelines/flight_status/backfill_historical_status.py \
-  --all \
-  --from-year 2016 \
-  --to-year 2026 \
-  --from-post-id 2500 \
-  --to-post-id 4300 \
-  --concurrency 4 \
-  --request-sleep-seconds 0.3 \
-  --output data/raw/flight_status/kunashir_historical_sources_v2.csv \
-  --errors-output data/raw/flight_status/historical_backfill_errors_v2.csv
-```
-
-Результат прогона `v2`:
-
-- всего сырых свидетельств: `289`;
-- `wayback_board`: `128`;
-- `airportus_news`: `69`;
-- `media_seed`: `92`;
-- уникальных `source_url`: `91`;
-- уникальных `flight_date`: `129`;
-- уникальных event keys (`date`, `flight_numbers`, `direction`, `status`): `259`;
-- ошибок сбора: `12`.
-
-Распределение статусов в `kunashir_historical_sources_v2.csv`:
-
-- `delayed`: `104`;
-- `scheduled`: `90`;
-- `cancelled`: `39`;
-- `unknown`: `24`;
-- `departed`: `14`;
-- `combined`: `10`;
-- `arrived`: `6`;
-- `check_in`: `1`;
-- `in_flight`: `1`.
-
-Годы в `v2` по `flight_date`/`source_published_date`:
-
-- `2017`: `2`;
-- `2018`: `117`;
-- `2019`: `16`;
-- `2020`: `12`;
-- `2021`: `4`;
-- `2022`: `2`;
-- `2023`: `2`;
-- `2024`: `61`;
-- `2025`: `63`;
-- `2026`: `8`;
-- `missing`: `2`.
-
-Интерпретация:
-
-- `cancelled`, `departed`, `arrived`, `in_flight`, `delayed`, `combined` — сильные или средние свидетельства о фактическом состоянии рейса;
-- `scheduled` — не означает, что рейс был выполнен, это только факт присутствия в расписании/табло на момент снимка;
-- `unknown` требует исключения или ручного аудита;
-- `media_seed` полезен как дополнительный слой, но для конфликтных дней приоритет должен быть у `airportus_news` и `wayback_board`.
-
-### План объединения датасетов
-
-Новые historical sources пока не заменяют рабочий `dataset_daily_flights.csv`.
-Для агрегации historical evidence и сборки v3-кандидата добавлен скрипт:
-
-```text
-pipelines/flight_status/build_dataset_v3.py
-```
-
-Он строит промежуточную агрегацию:
-
-```text
-data/raw/flight_status/kunashir_historical_sources_v3.csv
-        ↓
-data/interim/flight_status/historical_daily_labels_v3.csv
-```
-
-Предлагаемые правила агрегации:
-
-- `departed`, `arrived`, `in_flight` -> `completed`;
-- `cancelled` -> `cancelled`;
-- `delayed` -> `delayed`;
-- `combined` -> `disrupted`;
-- `scheduled`, `check_in` -> `planned_only`;
-- `unknown` -> `needs_review` или exclude.
-
-После этого нужно сравнить `historical_daily_labels.csv` с Telegram daily labels и вынести конфликтные дни в ручной аудит:
-
-- Telegram говорит `completed`, а официальный/архивный источник говорит `cancelled`;
-- Telegram говорит `cancelled`, а Wayback/табло говорит `departed` или `arrived`;
-- есть `delayed`/`combined`, но нет финального исхода;
-- несколько источников дают разные статусы на один день.
-
-Только после этого стоит собирать новый backend-safe датасет:
-
-```text
-telegram labels + confirmed historical labels + manual review fixes
-        ↓
-data/processed/dataset_daily_flights_v3.csv
-```
-
-Backend нужно переключать на v3 только после проверки конфликтов и фиксации новой `data_version`.
-
-Запуск текущего v3-кандидата:
-
-```bash
-python pipelines/flight_status/build_dataset_v3.py
-```
-
-По умолчанию скрипт читает:
-
-- `data/raw/flight_status/kunashir_historical_sources_v3.csv`;
-- `data/raw/flight_status/kunashir_flight_status_hourly.csv`;
-- `data/interim/flight_status/manual_review_v3.xlsx`;
-- `data/interim/flight_status/manual_overrides_v3.csv`.
-
-Hourly airport board применяется отдельным слоем:
-
-- `departed`, `arrived`, `in_flight` -> `completed`;
-- `combined` без фактического вылета/прилёта за эту дату -> `cancelled`;
-- `scheduled`-only сохраняется в excluded audit и не попадает в target.
-
-Ручной review применяется поверх автоматических historical labels:
-
-- binary-строки `completed`/`cancelled` попадают в backend-safe target;
-- `unknown`, `unsure`, `exclude`, `delayed`, `disrupted`, `planned_only` сохраняются в excluded audit и не попадают в target;
-- точечные ручные факты после основной проверки добавляются через `manual_overrides_v3.csv`.
-
-Результат последней сборки v3-кандидата после ручного review:
-
-- `historical_daily_labels_v3.csv`: `124` daily rows;
-- `needs_manual_review_v3.csv`: `39` rows;
-- `board_daily_labels_v3.csv`: `12` rows;
-- `board_daily_excluded_v3.csv`: `1` row;
-- `manual_review_applied_v3.csv`: `36` rows;
-- `manual_review_excluded_v3.csv`: `4` rows;
-- текущий `dataset_daily_flights.csv`: `699` binary rows;
-- кандидат `dataset_daily_flights_v3.csv`: `759` binary rows;
-- v3 status distribution: `completed=411`, `cancelled=348`;
-- ручной override: `2026-05-19` -> `cancelled`, причина `fog`, источник `telegram_manual_review_2026_05`;
-- backend switch status: `not_applied`.
-
-Причины ручного review:
-
-- `historical_unknown`: `16`;
-- `historical_disruption_without_final_outcome`: `11`;
-- `historical_disruption_with_telegram_binary_outcome`: `10`;
-- `telegram_historical_binary_conflict`: `2`.
-
-Важное ограничение: `dataset_daily_flights_v3.csv` пока является кандидатом. Он уже включает ручную проверку, но не должен автоматически заменять backend dataset, пока не принято решение о переключении `FLYFORECAST_DATASET_PATH`.
+Важно: данные в `data/` считаются рабочими/ценными и не обязаны коммититься в публичный репозиторий.
 
 ---
 
@@ -394,6 +92,7 @@ flyforecast/
 ├── docker-compose.prod.yml
 ├── backend/
 ├── frontend/
+├── pipelines/
 ├── data/
 └── docs/
 ```
@@ -419,58 +118,14 @@ backend/
         └── llm.py
 ```
 
-### Основные файлы backend
+Основные части:
 
-- `backend/Dockerfile`  
-  Docker image для FastAPI backend. Устанавливает зависимости и запускает `uvicorn app.main:app`.
-
-- `backend/requirements.txt`  
-  Python-зависимости backend: FastAPI, Uvicorn, httpx, Pydantic, GigaChat SDK и др.
-
-- `backend/app/main.py`  
-  Точка входа FastAPI. Содержит endpoints:
-  - `GET /health`;
-  - `POST /auth/login`;
-  - `GET /predict?date=YYYY-MM-DD`.
-
-  Также валидирует дату, вызывает погодный сервис, historical snapshot, predictor, LLM explanation и пишет prediction log.
-
-- `backend/app/config.py`  
-  Читает настройки из env:
-  - `APP_ENV`;
-  - `BACKEND_CORS_ORIGINS`;
-  - `TEST_USERNAME`;
-  - `TEST_PASSWORD`;
-  - `JWT_SECRET`;
-  - `GIGA_API_KEY`;
-  - `GIGA_MODEL`;
-  - `GIGA_SCOPE`;
-  - `GIGA_VERIFY_SSL_CERTS`;
-  - `GIGA_TIMEOUT`;
-  - `FLYFORECAST_DATASET_PATH`;
-  - `PREDICTION_LOG_PATH`;
-  - координаты аэропорта;
-  - timezone.
-
-- `backend/app/auth.py`  
-  Временная тестовая аутентификация для закрытого MVP. Не является production-grade auth.
-
-- `backend/app/schemas.py`  
-  Pydantic-схемы API: login, weather snapshot, historical snapshot, predict response.
-
-- `backend/app/services/weather.py`  
-  Интеграция с Open-Meteo forecast API. Для дальних дат возвращает `available=false`.
-
-- `backend/app/services/history.py`  
-  Читает `dataset_daily_flights.csv`, использует `completed` и `cancelled`, считает исторические вероятности по похожим датам/периодам.
-
-- `backend/app/services/predictor.py`  
-  MVP baseline-логика: horizon, confidence, weather adjustment, probability, threshold, decision, factors.
-
-- `backend/app/services/llm.py`  
-  Генерирует короткое объяснение через GigaChat API. Не получает сырые Telegram-сообщения и не принимает решение о вероятности.
-
----
+- `backend/app/main.py` — FastAPI endpoints: `/health`, `/auth/login`, `/predict`.
+- `backend/app/config.py` — env-настройки проекта.
+- `backend/app/services/weather.py` — Open-Meteo forecast API.
+- `backend/app/services/history.py` — historical snapshot из dataset.
+- `backend/app/services/predictor.py` — MVP baseline probability/decision/confidence.
+- `backend/app/services/llm.py` — объяснение результата через GigaChat.
 
 ## Frontend
 
@@ -489,51 +144,38 @@ frontend/
     └── styles.css
 ```
 
-### Основные файлы frontend
+Основные части:
 
-- `frontend/Dockerfile`  
-  Dev image для Vite dev server.
+- `frontend/src/App.jsx` — логин, календарь, запрос прогноза, карточка результата, CTA.
+- `frontend/src/styles.css` — тёмная палитра, layout, календарь, mobile adaptation.
+- `frontend/nginx.conf` — SPA fallback для production frontend.
 
-- `frontend/Dockerfile.prod`  
-  Production image: собирает React/Vite build и отдаёт static-файлы через nginx.
+## Pipelines
 
-- `frontend/nginx.conf`  
-  Конфиг nginx внутри frontend-контейнера для SPA fallback.
+Основные data/evaluation scripts:
 
-- `frontend/src/main.jsx`  
-  React entrypoint.
+- `pipelines/flight_status/collect_kunashir_status.py` — hourly collector табло.
+- `pipelines/flight_status/backfill_historical_status.py` — ретроспективный сбор evidence.
+- `pipelines/flight_status/build_dataset_v3.py` — сборка v3 fact dataset.
+- `pipelines/evaluation/forecast_monitor.py` — ledger прогнозов и оценка качества.
+- `pipelines/training/build_training_dataset_v1.py` — weather-enriched training dataset.
 
-- `frontend/src/App.jsx`  
-  Основная логика интерфейса:
-  - экран логина;
-  - хранение token в `localStorage`;
-  - календарь;
-  - запрос `/predict`;
-  - карточка результата;
-  - CTA на Telegram после второго прогноза.
-
-- `frontend/src/styles.css`  
-  Стили приложения: тёмная палитра, layout, карточки, календарь, кнопки, mobile adaptation.
-
----
-
-
+Подробнее см. `docs/data_experiments.md`.
 
 ## Docs
 
 ```text
 docs/
 ├── business_analysis.md
-├── prototype.md
-├── adr/
-└── experiments/
+├── data_experiments.md
+├── product_benchmarking.md
+└── prototype.md
 ```
 
-- `docs/business_analysis.md`  
-  Бизнес-анализ MVP: пользователи, проблема, value, конкурирующие решения, CRISP-DM, ML-метрики.
-
-- `docs/prototype.md`  
-  Описание продуктового прототипа, сценария пользователя, формата результата, CTA и критериев тестирования.
+- `docs/business_analysis.md` — бизнес-анализ MVP.
+- `docs/data_experiments.md` — история источников, датасетов, сборщиков и ML-data экспериментов.
+- `docs/product_benchmarking.md` — продуктовый benchmarking.
+- `docs/prototype.md` — описание продуктового прототипа.
 
 ---
 
@@ -552,7 +194,7 @@ cd flyforecast
 cp .env.example .env
 ```
 
-Заполнить значения:
+Минимальные значения:
 
 ```env
 APP_ENV=development
@@ -568,7 +210,7 @@ GIGA_SCOPE=GIGACHAT_API_PERS
 GIGA_VERIFY_SSL_CERTS=true
 GIGA_TIMEOUT=30
 
-FLYFORECAST_DATASET_PATH=/app/data/processed/dataset_daily_flights.csv
+FLYFORECAST_DATASET_PATH=/app/data/processed/dataset_daily_flights_v3.csv
 PREDICTION_LOG_PATH=/app/data/interim/prediction_logs.jsonl
 
 AIRPORT_LATITUDE=43.958
@@ -578,18 +220,18 @@ AIRPORT_TIMEZONE=Asia/Sakhalin
 
 ### 3. Подготовить dataset
 
-Положить файл:
+Положить рабочий dataset:
 
 ```text
-data/processed/dataset_daily_flights.csv
+data/processed/dataset_daily_flights_v3.csv
 ```
 
 Минимальный формат:
 
 ```csv
-date,status
-2024-01-01,completed
-2024-01-02,cancelled
+date,status,is_flight_completed
+2024-01-01,completed,1
+2024-01-02,cancelled,0
 ```
 
 ### 4. Запустить
@@ -679,35 +321,13 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 
 ## Ближайшие задачи
 
-1. Завершить Data Understanding:
-   - ручной audit labels v3 завершён и применён в `dataset_daily_flights_v3.csv`;
-   - labeler v3;
-   - фиксация правил разметки.
-
-2. Улучшить dataset:
-   - собрать финальный `dataset_daily_flights.csv`;
-   - исключить сомнительные статусы из target;
-   - добавить `data_version`;
-   - подготовить training dataset с weather + calendar features.
-
-3. Добавить ML:
-   - seasonal baseline;
-   - time-based train/validation/test;
-   - Logistic Regression;
-   - Brier Score;
-   - calibration curve;
-   - сравнение с seasonal baseline.
-
-4. Улучшить backend:
-   - аккуратная обработка малых выборок;
-   - tests для `/health`, `/auth/login`, `/predict`;
-   - более прозрачные confidence/threshold rules.
-
-5. Улучшить frontend:
-   - страница «Как это работает»;
-   - объяснение ограничений;
-   - сравнение соседних дат;
-   - аккуратная аналитика CTA.
+1. Проверить `training_dataset_v1.csv` на корреляции, leakage и качество признаков.
+2. Добавить time-based train/validation/test split.
+3. Сравнить seasonal baseline и Logistic Regression.
+4. Считать Brier Score и calibration curve.
+5. Улучшить backend confidence/threshold rules после первых метрик forecast monitor.
+6. Добавить tests для `/health`, `/auth/login`, `/predict`.
+7. Улучшить frontend: «Как это работает», сравнение соседних дат, прозрачные ограничения.
 
 ---
 
