@@ -23,6 +23,18 @@ services:
     command: python /app/pipelines/flight_status/collect_kunashir_status.py --loop --interval-seconds 3600 --skip-aurora
     restart: unless-stopped
 
+  forecast_monitor:
+    build:
+      context: ./backend
+    container_name: flyforecast-monitor
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./pipelines:/app/pipelines:ro
+    command: python /app/pipelines/evaluation/forecast_monitor.py --loop --interval-seconds 3600
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend

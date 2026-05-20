@@ -4,7 +4,7 @@ from app.schemas import HistoricalSnapshot, WeatherSnapshot
 
 
 MODEL_VERSION = "mvp-baseline-001"
-DATA_VERSION = "telegram-labels-v2-placeholder-openmeteo-v1"
+DATA_VERSION = "telegram-v2-plus-historical-board-manual-v3-2026-05-20"
 
 DISCLAIMER = (
     "Это вероятностная оценка, а не гарантия выполнения рейса. "

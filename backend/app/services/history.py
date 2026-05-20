@@ -30,7 +30,7 @@ def _load_rows() -> list[FlightDay]:
 
     rows: list[FlightDay] = []
 
-    with path.open("r", encoding="utf-8", newline="") as file:
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
         for row in reader:
             raw_date = row.get("date")

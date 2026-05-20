@@ -56,6 +56,7 @@
 - кастомный календарь выбора даты;
 - backend-safe dataset на основе Telegram-разметки v2.
 - hourly collector статуса рейсов Южно-Сахалинск/Южно-Курильск из табло аэропорта и погоды Open-Meteo.
+- forecast monitor: ежедневный ledger прогнозов, фактов по табло и метрик качества.
 
 Текущая модель/логика прогноза — не финальная ML-модель, а MVP baseline `mvp-baseline-001`. LLM не принимает решение о вероятности, а только формулирует объяснение уже рассчитанного результата.
 
@@ -152,6 +153,56 @@ python pipelines/flight_status/collect_kunashir_status.py --loop --interval-seco
 ```
 
 В Docker Compose добавлен сервис `collector`, который запускает этот hourly-режим вместе с проектом.
+
+В compose collector запускается с `--skip-aurora`, чтобы не шуметь SSL-ошибками от сайта Авроры. Основной источник `airportus` остаётся включённым.
+
+### Forecast monitor
+
+Монитор качества прогнозов находится в:
+
+```text
+pipelines/evaluation/forecast_monitor.py
+```
+
+Он не вызывает GigaChat и не дёргает публичный `/predict`. Вместо этого напрямую использует backend-логику `history`, `weather`, `predictor` и пишет неизменяемый журнал прогнозов в SQLite.
+
+По умолчанию монитор:
+
+- начиная с 06:00 по времени аэропорта создаёт прогнозы на горизонты `0..45`, `60`, `90` дней;
+- не дублирует прогнозы за тот же день, `model_version` и `data_version`;
+- читает фактические исходы из `data/raw/flight_status/kunashir_flight_status_hourly.csv`;
+- финализирует outcome только после лага `D+2`, чтобы табло успело показать переносы, совмещения и фактические вылеты;
+- считает `hit`, `Brier score`, absolute error и агрегаты по horizon bucket.
+
+Основная база:
+
+```text
+data/interim/evaluation/forecast_monitor.sqlite
+```
+
+CSV exports для анализа:
+
+```text
+data/interim/evaluation/exports/forecast_prediction_runs.csv
+data/interim/evaluation/exports/forecast_predictions.csv
+data/interim/evaluation/exports/forecast_outcomes.csv
+data/interim/evaluation/exports/forecast_evaluations.csv
+data/interim/evaluation/exports/forecast_metrics_summary.csv
+```
+
+Разовый запуск:
+
+```bash
+python pipelines/evaluation/forecast_monitor.py
+```
+
+Непрерывный режим:
+
+```bash
+python pipelines/evaluation/forecast_monitor.py --loop --interval-seconds 3600
+```
+
+В Docker Compose добавлен сервис `forecast_monitor`, который запускает монитор вместе с проектом.
 
 ### Historical flight status backfill
 
