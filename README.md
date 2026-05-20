@@ -47,7 +47,7 @@
 - временная тестовая аутентификация;
 - endpoint прогноза `/predict?date=YYYY-MM-DD`;
 - подключение Open-Meteo forecast API;
-- подключение OpenAI API для пользовательского объяснения;
+- подключение GigaChat API для пользовательского объяснения;
 - baseline-расчёт вероятности;
 - логирование прогнозов в JSONL;
 - карточка результата на frontend;
@@ -365,7 +365,7 @@ backend/
   Docker image для FastAPI backend. Устанавливает зависимости и запускает `uvicorn app.main:app`.
 
 - `backend/requirements.txt`  
-  Python-зависимости backend: FastAPI, Uvicorn, httpx, Pydantic, OpenAI SDK и др.
+  Python-зависимости backend: FastAPI, Uvicorn, httpx, Pydantic, GigaChat SDK и др.
 
 - `backend/app/main.py`  
   Точка входа FastAPI. Содержит endpoints:
@@ -382,8 +382,11 @@ backend/
   - `TEST_USERNAME`;
   - `TEST_PASSWORD`;
   - `JWT_SECRET`;
-  - `OPENAI_API_KEY`;
-  - `OPENAI_MODEL`;
+  - `GIGA_API_KEY`;
+  - `GIGA_MODEL`;
+  - `GIGA_SCOPE`;
+  - `GIGA_VERIFY_SSL_CERTS`;
+  - `GIGA_TIMEOUT`;
   - `FLYFORECAST_DATASET_PATH`;
   - `PREDICTION_LOG_PATH`;
   - координаты аэропорта;
@@ -405,7 +408,7 @@ backend/
   MVP baseline-логика: horizon, confidence, weather adjustment, probability, threshold, decision, factors.
 
 - `backend/app/services/llm.py`  
-  Генерирует короткое объяснение через OpenAI API. Не получает сырые Telegram-сообщения и не принимает решение о вероятности.
+  Генерирует короткое объяснение через GigaChat API. Не получает сырые Telegram-сообщения и не принимает решение о вероятности.
 
 ---
 
@@ -499,8 +502,11 @@ TEST_USERNAME=demo
 TEST_PASSWORD=demo
 JWT_SECRET=change-me
 
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-4.1-mini
+GIGA_API_KEY=your_gigachat_authorization_key
+GIGA_MODEL=GigaChat-2
+GIGA_SCOPE=GIGACHAT_API_PERS
+GIGA_VERIFY_SSL_CERTS=true
+GIGA_TIMEOUT=30
 
 FLYFORECAST_DATASET_PATH=/app/data/processed/dataset_daily_flights.csv
 PREDICTION_LOG_PATH=/app/data/interim/prediction_logs.jsonl

@@ -10,8 +10,11 @@ class Settings(BaseSettings):
     test_password: str = "demouser123"
     jwt_secret: str = "ferrum-molibden"
 
-    openai_api_key: str | None = None
-    openai_model: str = "gpt-5.4-mini"
+    giga_api_key: str | None = None
+    giga_model: str = "GigaChat-2"
+    giga_scope: str = "GIGACHAT_API_PERS"
+    giga_verify_ssl_certs: bool = True
+    giga_timeout: float = 30.0
 
     flyforecast_dataset_path: str = "/app/data/processed/dataset_daily_flights.csv"
     prediction_log_path: str = "/app/data/interim/prediction_logs.jsonl"

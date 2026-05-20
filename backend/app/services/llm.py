@@ -1,4 +1,4 @@
-from openai import OpenAI
+from gigachat import GigaChat
 
 from app.config import get_settings
 from app.schemas import HistoricalSnapshot, WeatherSnapshot
@@ -42,7 +42,7 @@ def generate_user_explanation(
 ) -> str:
     settings = get_settings()
 
-    if not settings.openai_api_key:
+    if not settings.giga_api_key:
         return fallback_explanation(
             target_date=target_date,
             decision=decision,
@@ -74,18 +74,22 @@ def generate_user_explanation(
     )
 
     try:
-        client = OpenAI(api_key=settings.openai_api_key)
-
-        response = client.responses.create(
-            model=settings.openai_model,
-            instructions=system_message,
-            input=(
-                "Сформулируй объяснение результата для пользователя на основе этих данных. "
-                f"Данные: {prompt}"
-            ),
+        user_message = (
+            f"{system_message}\n\n"
+            "Сформулируй объяснение результата для пользователя на основе этих данных. "
+            f"Данные: {prompt}"
         )
 
-        text = getattr(response, "output_text", None)
+        with GigaChat(
+            credentials=settings.giga_api_key,
+            scope=settings.giga_scope,
+            model=settings.giga_model,
+            verify_ssl_certs=settings.giga_verify_ssl_certs,
+            timeout=settings.giga_timeout,
+        ) as client:
+            response = client.chat(user_message)
+
+        text = response.choices[0].message.content if response.choices else None
 
         if text:
             return text.strip()
