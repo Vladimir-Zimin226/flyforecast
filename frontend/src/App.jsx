@@ -348,6 +348,7 @@ export default function App() {
   const [adminEditForm, setAdminEditForm] = useState({});
   const [authMode, setAuthMode] = useState("register");
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
+  const [authPromptMessage, setAuthPromptMessage] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -492,6 +493,18 @@ export default function App() {
     setPersonalDataConsent(false);
   }
 
+  function openAuthPanel(mode, message = "") {
+    setAuthMode(mode);
+    setAuthPromptMessage(message);
+    setAuthPanelOpen(true);
+  }
+
+  function closeAuthPanel() {
+    setAuthPanelOpen(false);
+    setAuthPromptMessage("");
+    setError("");
+  }
+
   async function handleLogin(event) {
     event.preventDefault();
     setError("");
@@ -533,6 +546,7 @@ export default function App() {
       }
 
       setAuthPanelOpen(false);
+      setAuthPromptMessage("");
       clearAuthForm();
     } catch (err) {
       setError(err.message || "Ошибка входа");
@@ -579,6 +593,7 @@ export default function App() {
       localStorage.removeItem(ANON_PREDICTION_COUNT_KEY);
       setToken(data.access_token);
       setAuthPanelOpen(false);
+      setAuthPromptMessage("");
       clearAuthForm();
     } catch (err) {
       setError(err.message || "Ошибка регистрации");
@@ -704,9 +719,10 @@ export default function App() {
     setFeedbackStatus("");
 
     if (mustRegister) {
-      setAuthMode("register");
-      setAuthPanelOpen(true);
-      setError("Вы уже сделали 5 бесплатных прогнозов. Зарегистрируйтесь, чтобы продолжить бесплатно.");
+      openAuthPanel(
+        "register",
+        "Вы уже сделали 5 бесплатных прогнозов без регистрации. Создайте личный кабинет, чтобы продолжить бесплатно."
+      );
       return;
     }
 
@@ -737,8 +753,10 @@ export default function App() {
         setPredictionCount(nextPredictionNumber);
         localStorage.setItem(ANON_PREDICTION_COUNT_KEY, String(nextPredictionNumber));
         if (nextPredictionNumber >= FREE_ANON_PREDICTION_LIMIT) {
-          setAuthMode("register");
-          setAuthPanelOpen(true);
+          openAuthPanel(
+            "register",
+            "Вы сделали 5 бесплатных прогнозов. Зарегистрируйтесь, чтобы продолжить пользоваться сервисом бесплатно."
+          );
         }
       }
     } catch (err) {
@@ -813,16 +831,14 @@ export default function App() {
               <button
                 className="secondary"
                 onClick={() => {
-                  setAuthMode("login");
-                  setAuthPanelOpen(true);
+                  openAuthPanel("login");
                 }}
               >
                 Войти
               </button>
               <button
                 onClick={() => {
-                  setAuthMode("register");
-                  setAuthPanelOpen(true);
+                  openAuthPanel("register");
                 }}
               >
                 Регистрация
@@ -1036,124 +1052,151 @@ export default function App() {
         </section>
       )}
 
-      {(authPanelOpen || mustRegister) && !token && (
-        <section className="card auth-card">
-          <div className="auth-tabs">
+      {authPanelOpen && !token && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="card auth-card auth-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="auth-modal-title"
+          >
             <button
-              className={authMode === "register" ? "" : "secondary"}
-              onClick={() => setAuthMode("register")}
               type="button"
+              className="modal-close"
+              onClick={closeAuthPanel}
+              aria-label="Закрыть окно регистрации"
             >
-              Регистрация
+              ×
             </button>
-            <button
-              className={authMode === "login" ? "" : "secondary"}
-              onClick={() => setAuthMode("login")}
-              type="button"
-            >
-              Вход
-            </button>
-          </div>
 
-          {authMode === "register" ? (
-            <>
-              <h2>Продолжить бесплатно</h2>
-              <p className="small">
-                После 5 бесплатных прогнозов нужен личный кабинет: так мы считаем реальную статистику использования и
-                можем собирать обратную связь по продукту.
-              </p>
+            <div className="auth-tabs">
+              <button
+                className={authMode === "register" ? "" : "secondary"}
+                onClick={() => {
+                  setAuthMode("register");
+                  setAuthPromptMessage("");
+                  setError("");
+                }}
+                type="button"
+              >
+                Регистрация
+              </button>
+              <button
+                className={authMode === "login" ? "" : "secondary"}
+                onClick={() => {
+                  setAuthMode("login");
+                  setAuthPromptMessage("");
+                  setError("");
+                }}
+                type="button"
+              >
+                Вход
+              </button>
+            </div>
 
-              <form onSubmit={handleRegister} className="form">
-                <label>
-                  Имя
-                  <input
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    autoComplete="name"
-                    required
-                  />
-                </label>
+            {authPromptMessage && <p className="notice">{authPromptMessage}</p>}
+            {error && <div className="error">{error}</div>}
 
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    autoComplete="email"
-                    required
-                  />
-                </label>
-
-                <label>
-                  Пароль
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    autoComplete="new-password"
-                    minLength={8}
-                    required
-                  />
-                </label>
-
-                <label className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={personalDataConsent}
-                    onChange={(event) => setPersonalDataConsent(event.target.checked)}
-                  />
-                  <span>
-                    Я даю согласие на обработку персональных данных и ознакомлен(а) с{" "}
-                    <button type="button" className="text-button" onClick={() => setPolicyOpen(true)}>
-                      политикой обработки персональных данных
-                    </button>
-                    .
-                  </span>
-                </label>
-
-                <p className="notice">
-                  Зарегистрироваться можно только после согласия на обработку персональных данных.
+            {authMode === "register" ? (
+              <>
+                <h2 id="auth-modal-title">Продолжить бесплатно</h2>
+                <p className="small">
+                  Личный кабинет нужен после 5 бесплатных прогнозов: в нем сохраняется ваша статистика и можно оставить
+                  обратную связь по сервису.
                 </p>
 
-                <button disabled={isLoading || !personalDataConsent}>
-                  {isLoading ? "Регистрируем..." : "Зарегистрироваться"}
-                </button>
-              </form>
-            </>
-          ) : (
-            <>
-              <h2>Вход в личный кабинет</h2>
-              <form onSubmit={handleLogin} className="form">
-                <label>
-                  Email
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    autoComplete="email"
-                    required
-                  />
-                </label>
+                <form onSubmit={handleRegister} className="form">
+                  <label>
+                    Имя
+                    <input
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      autoComplete="name"
+                      required
+                    />
+                  </label>
 
-                <label>
-                  Пароль
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    autoComplete="current-password"
-                    required
-                  />
-                </label>
+                  <label>
+                    Email
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      autoComplete="email"
+                      required
+                    />
+                  </label>
 
-                <button disabled={isLoading}>
-                  {isLoading ? "Входим..." : "Войти"}
-                </button>
-              </form>
-            </>
-          )}
-        </section>
+                  <label>
+                    Пароль
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      autoComplete="new-password"
+                      minLength={8}
+                      required
+                    />
+                  </label>
+
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={personalDataConsent}
+                      onChange={(event) => setPersonalDataConsent(event.target.checked)}
+                    />
+                    <span>
+                      Я даю согласие на обработку персональных данных и ознакомлен(а) с{" "}
+                      <button type="button" className="text-button" onClick={() => setPolicyOpen(true)}>
+                        политикой обработки персональных данных
+                      </button>
+                      .
+                    </span>
+                  </label>
+
+                  <p className="notice">
+                    Зарегистрироваться можно только после согласия на обработку персональных данных.
+                  </p>
+
+                  <button disabled={isLoading || !personalDataConsent}>
+                    {isLoading ? "Регистрируем..." : "Зарегистрироваться"}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <h2 id="auth-modal-title">Вход в личный кабинет</h2>
+                <form onSubmit={handleLogin} className="form">
+                  <label>
+                    Email
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      autoComplete="email"
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Пароль
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      autoComplete="current-password"
+                      required
+                    />
+                  </label>
+
+                  <button disabled={isLoading}>
+                    {isLoading ? "Входим..." : "Войти"}
+                  </button>
+                </form>
+              </>
+            )}
+          </section>
+        </div>
       )}
 
       <section className="card">
@@ -1242,7 +1285,7 @@ export default function App() {
             )}
           </div>
 
-          <button disabled={isLoading || mustRegister}>
+          <button disabled={isLoading}>
             {isLoading ? "Считаем..." : "Узнать вероятность вылета"}
           </button>
         </form>

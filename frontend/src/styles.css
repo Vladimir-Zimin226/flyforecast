@@ -90,6 +90,40 @@ button:active:not(:disabled),
   margin: 48px auto;
 }
 
+.modal-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(1, 1, 1, 0.72);
+  backdrop-filter: blur(8px);
+}
+
+.auth-modal {
+  position: relative;
+  width: min(540px, 100%);
+  max-height: min(92vh, 760px);
+  margin: 0;
+  overflow-y: auto;
+}
+
+.modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--color-headline);
+  box-shadow: none;
+  font-size: 26px;
+  line-height: 1;
+}
+
 .eyebrow {
   color: var(--color-tertiary);
   font-weight: 800;
@@ -465,6 +499,18 @@ button:disabled {
 
   .card,
   .hero {
+    border-radius: 22px;
+    padding: 22px;
+  }
+
+  .modal-backdrop {
+    align-items: end;
+    padding: 12px;
+  }
+
+  .auth-modal {
+    width: 100%;
+    max-height: calc(100vh - 24px);
     border-radius: 22px;
     padding: 22px;
   }
