@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const TOKEN_KEY = "flyforecast_token";
+const ADMIN_TOKEN_KEY = "flyforecast_admin_token";
 const ANON_PREDICTION_COUNT_KEY = "flyforecast_prediction_count";
 const COOKIE_NOTICE_KEY = "flyforecast_cookie_notice_ack";
 const ANALYTICS_CONSENT_KEY = "flyforecast_analytics_consent";
@@ -222,9 +223,9 @@ const policySections = [
     title: "11. Локализация и трансграничная передача",
     items: [
       "При сборе персональных данных граждан Российской Федерации Оператор обеспечивает запись, систематизацию, накопление, хранение, уточнение и извлечение таких данных с использованием баз данных, находящихся на территории Российской Федерации, если иное не допускается законом.",
-      "В документах Оператора указаны российские локации хранения у поставщиков инфраструктуры, включая АО «Селектел» и ООО «СПРИНТХОСТ.РУ», при их фактическом использовании в инфраструктуре проекта.",
-      "На дату публикации настоящей Политики трансграничная передача персональных данных в рамках сервиса flyforecast.ru не осуществляется.",
-      "Перед подключением зарубежных API, облаков, CRM, сервисов рассылок, аналитики или иных инструментов, предполагающих трансграничную передачу, Оператор проводит отдельную проверку и обновляет документы при необходимости."
+      "Для сервиса flyforecast.ru используются ресурсы АО «Селектел», расположенные на территории Российской Федерации.",
+      "Трансграничная передача персональных данных в рамках сервиса flyforecast.ru не осуществляется и не планируется осуществляться.",
+      "Если в будущем архитектура сервиса изменится таким образом, что потребуется трансграничная передача персональных данных, Оператор до начала такой обработки обновит документы и выполнит необходимые действия, предусмотренные законодательством Российской Федерации."
     ]
   },
   {
@@ -340,7 +341,11 @@ function PrivacyPolicyView({ onBack }) {
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem(TOKEN_KEY) || "");
+  const [adminToken, setAdminToken] = useState(localStorage.getItem(ADMIN_TOKEN_KEY) || "");
   const [profile, setProfile] = useState(null);
+  const [adminData, setAdminData] = useState(null);
+  const [adminEditEmail, setAdminEditEmail] = useState("");
+  const [adminEditForm, setAdminEditForm] = useState({});
   const [authMode, setAuthMode] = useState("register");
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
   const [name, setName] = useState("");
@@ -382,6 +387,15 @@ export default function App() {
     loadProfile(token);
   }, [token]);
 
+  useEffect(() => {
+    if (!adminToken) {
+      setAdminData(null);
+      return;
+    }
+
+    loadAdminUsers(adminToken);
+  }, [adminToken]);
+
   async function loadProfile(authToken = token) {
     const response = await fetch(`${API_BASE_URL}/me`, {
       headers: {
@@ -397,6 +411,23 @@ export default function App() {
     }
 
     setProfile(await response.json());
+  }
+
+  async function loadAdminUsers(authToken = adminToken) {
+    const response = await fetch(`${API_BASE_URL}/admin/users`, {
+      headers: {
+        Authorization: `Bearer ${authToken}`
+      }
+    });
+
+    if (!response.ok) {
+      localStorage.removeItem(ADMIN_TOKEN_KEY);
+      setAdminToken("");
+      setAdminData(null);
+      return;
+    }
+
+    setAdminData(await response.json());
   }
 
   function sendConsentEvent(event, payload) {
@@ -493,6 +524,38 @@ export default function App() {
     }
   }
 
+  async function handleAdminLogin(event) {
+    event.preventDefault();
+    setError("");
+    setFeedbackStatus("");
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/admin/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ email, password })
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || "Не удалось войти в админку.");
+      }
+
+      const data = await response.json();
+      localStorage.setItem(ADMIN_TOKEN_KEY, data.access_token);
+      setAdminToken(data.access_token);
+      setAuthPanelOpen(false);
+      clearAuthForm();
+    } catch (err) {
+      setError(err.message || "Ошибка входа в админку");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   async function handleRegister(event) {
     event.preventDefault();
     setError("");
@@ -546,6 +609,108 @@ export default function App() {
     setResult(null);
     setFeedbackMessage("");
     setFeedbackStatus("");
+  }
+
+  function handleAdminLogout() {
+    localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setAdminToken("");
+    setAdminData(null);
+    setAdminEditEmail("");
+    setAdminEditForm({});
+  }
+
+  function startEditUser(user) {
+    setAdminEditEmail(user.email);
+    setAdminEditForm({
+      name: user.name,
+      email: user.email,
+      prediction_count: user.prediction_count,
+      feedback_count: user.feedback_count,
+      personal_data_consent: user.personal_data_consent,
+      analytics_consent: user.analytics_consent,
+      password: ""
+    });
+  }
+
+  function updateAdminEditField(field, value) {
+    setAdminEditForm((current) => ({
+      ...current,
+      [field]: value
+    }));
+  }
+
+  async function handleAdminSaveUser(event) {
+    event.preventDefault();
+    setError("");
+    setFeedbackStatus("");
+    setIsLoading(true);
+
+    const payload = {
+      name: adminEditForm.name,
+      email: adminEditForm.email,
+      prediction_count: Number(adminEditForm.prediction_count),
+      feedback_count: Number(adminEditForm.feedback_count),
+      personal_data_consent: Boolean(adminEditForm.personal_data_consent),
+      analytics_consent: Boolean(adminEditForm.analytics_consent)
+    };
+
+    if (adminEditForm.password) {
+      payload.password = adminEditForm.password;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/users/${encodeURIComponent(adminEditEmail)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${adminToken}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Не удалось сохранить пользователя.");
+      }
+
+      setAdminEditEmail("");
+      setAdminEditForm({});
+      await loadAdminUsers(adminToken);
+    } catch (err) {
+      setError(err.message || "Ошибка сохранения пользователя");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function handleAdminDeleteUser(emailToDelete) {
+    if (!window.confirm(`Удалить пользователя ${emailToDelete}?`)) {
+      return;
+    }
+
+    setError("");
+    setFeedbackStatus("");
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/users/${encodeURIComponent(emailToDelete)}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${adminToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Не удалось удалить пользователя.");
+      }
+
+      await loadAdminUsers(adminToken);
+    } catch (err) {
+      setError(err.message || "Ошибка удаления пользователя");
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   async function handlePredict(event) {
@@ -645,7 +810,16 @@ export default function App() {
         </div>
 
         <div className="hero-actions">
-          {token ? (
+          {adminToken ? (
+            <>
+              <button className="secondary" onClick={() => loadAdminUsers(adminToken)}>
+                Обновить админку
+              </button>
+              <button className="secondary" onClick={handleAdminLogout}>
+                Выйти из админки
+              </button>
+            </>
+          ) : token ? (
             <button className="secondary" onClick={handleLogout}>
               Выйти
             </button>
@@ -668,6 +842,15 @@ export default function App() {
               >
                 Регистрация
               </button>
+              <button
+                className="secondary"
+                onClick={() => {
+                  setAuthMode("admin");
+                  setAuthPanelOpen(true);
+                }}
+              >
+                Админ
+              </button>
             </>
           )}
         </div>
@@ -688,6 +871,149 @@ export default function App() {
               Только необходимые
             </button>
             <button onClick={approveAnalytics}>Разрешаю аналитику</button>
+          </div>
+        </section>
+      )}
+
+      {adminToken && adminData && (
+        <section className="card admin-card">
+          <div className="section-heading">
+            <div>
+              <div className="eyebrow">Админ-панель</div>
+              <h2>Пользователи и аналитика</h2>
+            </div>
+          </div>
+
+          <div className="meta-grid">
+            <div>
+              <span>Пользователей</span>
+              <strong>{adminData.total_users}</strong>
+            </div>
+            <div>
+              <span>Прогнозов</span>
+              <strong>{adminData.total_predictions}</strong>
+            </div>
+            <div>
+              <span>Отзывов</span>
+              <strong>{adminData.total_feedback}</strong>
+            </div>
+            <div>
+              <span>Согласий на аналитику</span>
+              <strong>{adminData.analytics_consents}</strong>
+            </div>
+          </div>
+
+          <div className="admin-users">
+            {adminData.users.map((user) => (
+              <div className="admin-user" key={user.email}>
+                {adminEditEmail === user.email ? (
+                  <form onSubmit={handleAdminSaveUser} className="admin-edit-form">
+                    <label>
+                      Имя
+                      <input
+                        value={adminEditForm.name || ""}
+                        onChange={(event) => updateAdminEditField("name", event.target.value)}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Email
+                      <input
+                        type="email"
+                        value={adminEditForm.email || ""}
+                        onChange={(event) => updateAdminEditField("email", event.target.value)}
+                        required
+                      />
+                    </label>
+                    <label>
+                      Новый пароль
+                      <input
+                        type="password"
+                        value={adminEditForm.password || ""}
+                        onChange={(event) => updateAdminEditField("password", event.target.value)}
+                        placeholder="Оставьте пустым, если не меняется"
+                      />
+                    </label>
+                    <label>
+                      Прогнозов
+                      <input
+                        type="number"
+                        min="0"
+                        value={adminEditForm.prediction_count ?? 0}
+                        onChange={(event) => updateAdminEditField("prediction_count", event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Отзывов
+                      <input
+                        type="number"
+                        min="0"
+                        value={adminEditForm.feedback_count ?? 0}
+                        onChange={(event) => updateAdminEditField("feedback_count", event.target.value)}
+                      />
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(adminEditForm.personal_data_consent)}
+                        onChange={(event) => updateAdminEditField("personal_data_consent", event.target.checked)}
+                      />
+                      <span>Согласие на обработку ПД</span>
+                    </label>
+                    <label className="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(adminEditForm.analytics_consent)}
+                        onChange={(event) => updateAdminEditField("analytics_consent", event.target.checked)}
+                      />
+                      <span>Согласие на аналитику</span>
+                    </label>
+                    <div className="admin-row-actions">
+                      <button disabled={isLoading}>Сохранить</button>
+                      <button
+                        type="button"
+                        className="secondary"
+                        onClick={() => {
+                          setAdminEditEmail("");
+                          setAdminEditForm({});
+                        }}
+                      >
+                        Отмена
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <>
+                    <div className="admin-user-main">
+                      <div>
+                        <strong>{user.name}</strong>
+                        <span>{user.email}</span>
+                      </div>
+                      <div className="admin-row-actions">
+                        <button type="button" className="secondary" onClick={() => startEditUser(user)}>
+                          Редактировать
+                        </button>
+                        <button type="button" className="danger-button" onClick={() => handleAdminDeleteUser(user.email)}>
+                          Удалить
+                        </button>
+                      </div>
+                    </div>
+                    <div className="admin-user-stats">
+                      <span>Прогнозов: {user.prediction_count}</span>
+                      <span>Отзывов: {user.feedback_count}</span>
+                      <span>Метрика: {user.analytics_consent ? "да" : "нет"}</span>
+                      <span>Регистрация: {new Date(user.registered_at).toLocaleDateString("ru-RU")}</span>
+                      <span>
+                        Последний прогноз:{" "}
+                        {user.last_prediction_at
+                          ? new Date(user.last_prediction_at).toLocaleString("ru-RU")
+                          : "нет"}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
           </div>
         </section>
       )}
@@ -750,6 +1076,13 @@ export default function App() {
               type="button"
             >
               Вход
+            </button>
+            <button
+              className={authMode === "admin" ? "" : "secondary"}
+              onClick={() => setAuthMode("admin")}
+              type="button"
+            >
+              Админ
             </button>
           </div>
 
@@ -819,7 +1152,7 @@ export default function App() {
                 </button>
               </form>
             </>
-          ) : (
+          ) : authMode === "login" ? (
             <>
               <h2>Вход в личный кабинет</h2>
               <form onSubmit={handleLogin} className="form">
@@ -847,6 +1180,37 @@ export default function App() {
 
                 <button disabled={isLoading}>
                   {isLoading ? "Входим..." : "Войти"}
+                </button>
+              </form>
+            </>
+          ) : (
+            <>
+              <h2>Вход администратора</h2>
+              <form onSubmit={handleAdminLogin} className="form">
+                <label>
+                  Email администратора
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    autoComplete="email"
+                    required
+                  />
+                </label>
+
+                <label>
+                  Пароль
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    autoComplete="current-password"
+                    required
+                  />
+                </label>
+
+                <button disabled={isLoading}>
+                  {isLoading ? "Входим..." : "Войти в админку"}
                 </button>
               </form>
             </>

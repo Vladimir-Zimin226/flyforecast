@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     test_username: str = "demo"
     test_password: str = "demouser123"
     jwt_secret: str = "ferrum-molibden"
+    admin_email: str = "admin@example.com"
+    admin_password: str = "change-me-admin-password"
 
     giga_api_key: str | None = None
     giga_model: str = "GigaChat-2"
@@ -18,6 +20,7 @@ class Settings(BaseSettings):
 
     flyforecast_dataset_path: str = "/app/data/processed/dataset_daily_flights.csv"
     prediction_log_path: str = "/app/data/interim/prediction_logs.jsonl"
+    database_url: str = "postgresql://flyforecast:flyforecast@db:5432/flyforecast"
     user_store_path: str = "/app/data/interim/users.json"
     feedback_log_path: str = "/app/data/interim/feedback_logs.jsonl"
     consent_log_path: str = "/app/data/interim/consent_logs.jsonl"

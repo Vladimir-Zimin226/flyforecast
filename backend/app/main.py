@@ -1,5 +1,6 @@
 import json
 import logging
+import hmac
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -8,10 +9,12 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.auth import create_token, optional_user, require_user
+from app.auth import create_token, optional_user, require_admin, require_user
 from app.config import get_settings
 from app.schemas import (
     ConsentRequest,
+    AdminUpdateUserRequest,
+    AdminUsersResponse,
     FeedbackRequest,
     FeedbackResponse,
     LoginRequest,
@@ -34,11 +37,16 @@ from app.services.predictor import (
 from app.services.weather import fetch_weather_for_date
 from app.services.users import (
     authenticate_user,
+    delete_admin_user,
     get_user,
     increment_prediction_count,
+    init_database,
+    list_admin_users,
     log_consent,
     register_user,
     save_feedback,
+    save_prediction_event,
+    update_admin_user,
 )
 
 
@@ -66,6 +74,11 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def startup() -> None:
+    init_database()
+
+
 @app.get("/health")
 def health() -> dict:
     logger.info("health_check status=ok")
@@ -80,6 +93,21 @@ def login(payload: LoginRequest) -> LoginResponse:
 
     logger.info("login_success email=%s", user["email"])
     return LoginResponse(access_token=create_token(user["email"]))
+
+
+@app.post("/auth/admin/login", response_model=LoginResponse)
+def admin_login(payload: LoginRequest) -> LoginResponse:
+    settings = get_settings()
+
+    if (
+        payload.email != settings.admin_email.strip().lower()
+        or not hmac.compare_digest(payload.password, settings.admin_password)
+    ):
+        logger.warning("admin_login_failed email=%s", payload.email)
+        raise HTTPException(status_code=401, detail="Invalid admin email or password")
+
+    logger.info("admin_login_success email=%s", payload.email)
+    return LoginResponse(access_token=create_token(payload.email))
 
 
 @app.post("/auth/register", response_model=LoginResponse)
@@ -123,6 +151,38 @@ def consent(payload: ConsentRequest) -> FeedbackResponse:
         analytics_consent=payload.analytics_consent,
     )
     logger.info("consent_logged event=%s analytics_consent=%s", payload.event, payload.analytics_consent)
+    return FeedbackResponse(status="ok")
+
+
+@app.get("/admin/users", response_model=AdminUsersResponse)
+def admin_users(admin: Annotated[str, Depends(require_admin)]) -> AdminUsersResponse:
+    logger.info("admin_users_requested admin=%s", admin)
+    return AdminUsersResponse(**list_admin_users())
+
+
+@app.patch("/admin/users/{email}", response_model=UserProfileResponse)
+def admin_update_user(
+    email: str,
+    payload: AdminUpdateUserRequest,
+    admin: Annotated[str, Depends(require_admin)],
+) -> UserProfileResponse:
+    logger.info("admin_user_update admin=%s email=%s", admin, email)
+    changes = {
+        key: value
+        for key, value in payload.model_dump(exclude_unset=True).items()
+        if value is not None
+    }
+    user = update_admin_user(email, changes)
+    return UserProfileResponse(**user)
+
+
+@app.delete("/admin/users/{email}", response_model=FeedbackResponse)
+def admin_delete_user(
+    email: str,
+    admin: Annotated[str, Depends(require_admin)],
+) -> FeedbackResponse:
+    logger.info("admin_user_delete admin=%s email=%s", admin, email)
+    delete_admin_user(email)
     return FeedbackResponse(status="ok")
 
 
@@ -278,13 +338,30 @@ async def predict(
         disclaimer=DISCLAIMER,
     )
 
+    session_prediction_number = increment_prediction_count(user) if user else session_prediction_number
+
     log_prediction(
         result=result,
         username=user or "anonymous",
-        session_prediction_number=increment_prediction_count(user) if user else session_prediction_number,
+        session_prediction_number=session_prediction_number,
         utm_source=utm_source,
         request_id=request_id,
     )
+
+    if user:
+        save_prediction_event(
+            email=user,
+            request_id=request_id,
+            target_date=result.date,
+            horizon_days=result.horizon_days,
+            probability_flight=result.probability_flight,
+            decision=result.decision,
+            confidence=result.confidence,
+            model_version=result.model_version,
+            data_version=result.data_version,
+            session_prediction_number=session_prediction_number,
+            utm_source=utm_source,
+        )
 
     logger.info(
         "predict_finished request_id=%s target_date=%s status=success",

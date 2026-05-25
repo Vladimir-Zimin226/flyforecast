@@ -1,9 +1,26 @@
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
+
+
+EMAIL_PATTERN = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
+
+
+def validate_email_address(value: str) -> str:
+    email = value.strip().lower()
+    if not EMAIL_PATTERN.fullmatch(email):
+        raise ValueError("Enter a valid email address")
+    return email
 
 
 class LoginRequest(BaseModel):
     email: str
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return validate_email_address(value)
 
 
 class LoginResponse(BaseModel):
@@ -18,6 +35,11 @@ class RegisterRequest(BaseModel):
     personal_data_consent: bool
     analytics_consent: bool = False
     initial_prediction_count: int = Field(default=0, ge=0, le=5)
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str) -> str:
+        return validate_email_address(value)
 
 
 class UserProfileResponse(BaseModel):
@@ -42,6 +64,42 @@ class ConsentRequest(BaseModel):
     event: str = Field(pattern="^(necessary_cookies_ack|analytics_consent)$")
     necessary_cookies_ack: bool = False
     analytics_consent: bool = False
+
+
+class AdminUserResponse(BaseModel):
+    name: str
+    email: str
+    prediction_count: int
+    feedback_count: int
+    registered_at: str
+    updated_at: str
+    personal_data_consent: bool
+    analytics_consent: bool
+    last_prediction_at: str | None = None
+    last_feedback_at: str | None = None
+
+
+class AdminUsersResponse(BaseModel):
+    total_users: int
+    total_predictions: int
+    total_feedback: int
+    analytics_consents: int
+    users: list[AdminUserResponse]
+
+
+class AdminUpdateUserRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    email: str | None = Field(default=None, min_length=5, max_length=254)
+    password: str | None = Field(default=None, min_length=8, max_length=128)
+    prediction_count: int | None = Field(default=None, ge=0)
+    feedback_count: int | None = Field(default=None, ge=0)
+    personal_data_consent: bool | None = None
+    analytics_consent: bool | None = None
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value: str | None) -> str | None:
+        return validate_email_address(value) if value is not None else None
 
 
 class WeatherSnapshot(BaseModel):

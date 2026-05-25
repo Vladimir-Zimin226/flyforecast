@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import get_settings
+from app.schemas import validate_email_address
 
 security = HTTPBearer()
 optional_security = HTTPBearer(auto_error=False)
@@ -77,6 +78,21 @@ def verify_token(token: str) -> str:
 
 def require_user(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]) -> str:
     return verify_token(credentials.credentials)
+
+
+def require_admin(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]) -> str:
+    user = verify_token(credentials.credentials)
+    settings = get_settings()
+
+    try:
+        is_admin = validate_email_address(user) == validate_email_address(settings.admin_email)
+    except ValueError:
+        is_admin = False
+
+    if not is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    return user
 
 
 def optional_user(

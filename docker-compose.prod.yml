@@ -1,4 +1,15 @@
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: flyforecast-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-flyforecast}
+      POSTGRES_USER: ${POSTGRES_USER:-flyforecast}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flyforecast}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -7,6 +18,8 @@ services:
       - .env
     volumes:
       - ./data:/app/data
+    depends_on:
+      - db
     ports:
       - "127.0.0.1:8000:8000"
     restart: unless-stopped
@@ -49,3 +62,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  postgres_data:
