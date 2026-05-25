@@ -598,8 +598,47 @@ button:disabled {
   font-size: clamp(24px, 3vw, 32px);
 }
 
+.operator-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 26px 0;
+}
+
+.operator-grid div {
+  padding: 16px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 16px;
+  background: var(--surface-soft);
+}
+
+.operator-grid dt {
+  margin-bottom: 6px;
+  color: var(--color-paragraph);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.operator-grid dd {
+  margin: 0;
+  color: var(--color-headline);
+  font-weight: 800;
+  line-height: 1.4;
+}
+
 .legal-card li {
   margin-bottom: 10px;
   color: var(--color-paragraph);
   line-height: 1.5;
+}
+
+.legal-card a {
+  color: var(--color-tertiary);
+  font-weight: 900;
+}
+
+@media (max-width: 720px) {
+  .operator-grid {
+    grid-template-columns: 1fr;
+  }
 }
