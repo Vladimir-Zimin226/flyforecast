@@ -515,42 +515,27 @@ export default function App() {
       const data = await response.json();
       localStorage.setItem(TOKEN_KEY, data.access_token);
       setToken(data.access_token);
+
+      const adminResponse = await fetch(`${API_BASE_URL}/admin/users`, {
+        headers: {
+          Authorization: `Bearer ${data.access_token}`
+        }
+      });
+
+      if (adminResponse.ok) {
+        localStorage.setItem(ADMIN_TOKEN_KEY, data.access_token);
+        setAdminToken(data.access_token);
+        setAdminData(await adminResponse.json());
+      } else {
+        localStorage.removeItem(ADMIN_TOKEN_KEY);
+        setAdminToken("");
+        setAdminData(null);
+      }
+
       setAuthPanelOpen(false);
       clearAuthForm();
     } catch (err) {
       setError(err.message || "Ошибка входа");
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-  async function handleAdminLogin(event) {
-    event.preventDefault();
-    setError("");
-    setFeedbackStatus("");
-    setIsLoading(true);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/admin/login`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ email, password })
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.detail || "Не удалось войти в админку.");
-      }
-
-      const data = await response.json();
-      localStorage.setItem(ADMIN_TOKEN_KEY, data.access_token);
-      setAdminToken(data.access_token);
-      setAuthPanelOpen(false);
-      clearAuthForm();
-    } catch (err) {
-      setError(err.message || "Ошибка входа в админку");
     } finally {
       setIsLoading(false);
     }
@@ -842,15 +827,6 @@ export default function App() {
               >
                 Регистрация
               </button>
-              <button
-                className="secondary"
-                onClick={() => {
-                  setAuthMode("admin");
-                  setAuthPanelOpen(true);
-                }}
-              >
-                Админ
-              </button>
             </>
           )}
         </div>
@@ -1077,13 +1053,6 @@ export default function App() {
             >
               Вход
             </button>
-            <button
-              className={authMode === "admin" ? "" : "secondary"}
-              onClick={() => setAuthMode("admin")}
-              type="button"
-            >
-              Админ
-            </button>
           </div>
 
           {authMode === "register" ? (
@@ -1152,7 +1121,7 @@ export default function App() {
                 </button>
               </form>
             </>
-          ) : authMode === "login" ? (
+          ) : (
             <>
               <h2>Вход в личный кабинет</h2>
               <form onSubmit={handleLogin} className="form">
@@ -1180,37 +1149,6 @@ export default function App() {
 
                 <button disabled={isLoading}>
                   {isLoading ? "Входим..." : "Войти"}
-                </button>
-              </form>
-            </>
-          ) : (
-            <>
-              <h2>Вход администратора</h2>
-              <form onSubmit={handleAdminLogin} className="form">
-                <label>
-                  Email администратора
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    autoComplete="email"
-                    required
-                  />
-                </label>
-
-                <label>
-                  Пароль
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    autoComplete="current-password"
-                    required
-                  />
-                </label>
-
-                <button disabled={isLoading}>
-                  {isLoading ? "Входим..." : "Войти в админку"}
                 </button>
               </form>
             </>

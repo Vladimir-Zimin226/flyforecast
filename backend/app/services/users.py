@@ -252,6 +252,21 @@ def register_user(
 
 def authenticate_user(email: str, password: str) -> dict:
     normalized_email = _normalize_email(email)
+    settings = get_settings()
+
+    if (
+        normalized_email == _normalize_email(settings.admin_email)
+        and hmac.compare_digest(password, settings.admin_password)
+    ):
+        return {
+            "name": "Администратор",
+            "email": normalized_email,
+            "prediction_count": 0,
+            "feedback_count": 0,
+            "registered_at": _now(),
+            "personal_data_consent": True,
+            "analytics_consent": False,
+        }
 
     with _connect() as conn:
         with conn.cursor() as cur:

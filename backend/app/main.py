@@ -1,6 +1,5 @@
 import json
 import logging
-import hmac
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -93,21 +92,6 @@ def login(payload: LoginRequest) -> LoginResponse:
 
     logger.info("login_success email=%s", user["email"])
     return LoginResponse(access_token=create_token(user["email"]))
-
-
-@app.post("/auth/admin/login", response_model=LoginResponse)
-def admin_login(payload: LoginRequest) -> LoginResponse:
-    settings = get_settings()
-
-    if (
-        payload.email != settings.admin_email.strip().lower()
-        or not hmac.compare_digest(payload.password, settings.admin_password)
-    ):
-        logger.warning("admin_login_failed email=%s", payload.email)
-        raise HTTPException(status_code=401, detail="Invalid admin email or password")
-
-    logger.info("admin_login_success email=%s", payload.email)
-    return LoginResponse(access_token=create_token(payload.email))
 
 
 @app.post("/auth/register", response_model=LoginResponse)
