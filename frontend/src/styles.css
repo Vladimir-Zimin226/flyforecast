@@ -725,6 +725,38 @@ button:disabled {
   line-height: 1.5;
 }
 
+.admin-feedbacks {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 2px solid var(--color-stroke);
+}
+
+.admin-feedbacks > strong {
+  color: var(--color-headline);
+}
+
+.admin-feedback {
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-raised);
+}
+
+.admin-feedback time {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--color-paragraph);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-feedback p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .admin-row-actions {
   display: flex;
   flex-wrap: wrap;

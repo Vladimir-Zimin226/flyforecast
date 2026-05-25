@@ -53,7 +53,7 @@ class UserProfileResponse(BaseModel):
 
 
 class FeedbackRequest(BaseModel):
-    message: str = Field(min_length=3, max_length=2000)
+    message: str = Field(min_length=3, max_length=500)
 
 
 class FeedbackResponse(BaseModel):
@@ -64,6 +64,12 @@ class ConsentRequest(BaseModel):
     event: str = Field(pattern="^(necessary_cookies_ack|analytics_consent)$")
     necessary_cookies_ack: bool = False
     analytics_consent: bool = False
+
+
+class AdminFeedbackResponse(BaseModel):
+    id: int
+    message: str
+    created_at: str
 
 
 class AdminUserResponse(BaseModel):
@@ -77,6 +83,7 @@ class AdminUserResponse(BaseModel):
     analytics_consent: bool
     last_prediction_at: str | None = None
     last_feedback_at: str | None = None
+    feedbacks: list[AdminFeedbackResponse] = []
 
 
 class AdminUsersResponse(BaseModel):

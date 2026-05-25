@@ -207,6 +207,7 @@ const policySections = [
     items: [
       "Пользователь может направить сообщение через форму обратной связи в личном кабинете.",
       "Оператор использует сообщение обратной связи для анализа качества сервиса, исправления ошибок, развития продукта и ответа пользователю при необходимости.",
+      "Оператор может использовать отзывы пользователей в целях продвижения сервиса, включая рекламные и информационные материалы. Публикация отзыва с именем, email или иными сведениями, позволяющими прямо идентифицировать пользователя, допускается только при наличии отдельного согласия или иного законного основания.",
       "Пользователь не должен направлять через форму обратной связи специальные категории персональных данных, паспортные данные, платежные реквизиты, медицинские сведения, пароли, токены и персональные данные третьих лиц без законного основания."
     ]
   },
@@ -1002,6 +1003,19 @@ export default function App() {
                           : "нет"}
                       </span>
                     </div>
+                    <div className="admin-feedbacks">
+                      <strong>Отзывы пользователя</strong>
+                      {user.feedbacks.length > 0 ? (
+                        user.feedbacks.map((feedback) => (
+                          <article className="admin-feedback" key={feedback.id}>
+                            <time>{new Date(feedback.created_at).toLocaleString("ru-RU")}</time>
+                            <p>{feedback.message}</p>
+                          </article>
+                        ))
+                      ) : (
+                        <p className="small">Пока отзывов нет.</p>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
@@ -1040,9 +1054,10 @@ export default function App() {
                 value={feedbackMessage}
                 onChange={(event) => setFeedbackMessage(event.target.value)}
                 placeholder="Что улучшить, что работает странно, чего не хватает?"
-                maxLength={2000}
+                maxLength={500}
               />
             </label>
+            <p className="small">{feedbackMessage.length} из 500 символов</p>
             <button disabled={isLoading || feedbackMessage.trim().length < 3}>
               Отправить отзыв
             </button>

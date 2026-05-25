@@ -53,6 +53,8 @@ def _verify_password(password: str, stored_hash: str) -> bool:
 
 
 def _iso(value) -> str | None:
+    if isinstance(value, str):
+        return value
     return value.isoformat() if value is not None else None
 
 
@@ -69,12 +71,23 @@ def _public_user(row: dict) -> dict:
 
 
 def _admin_user(row: dict) -> dict:
+    feedbacks = []
+    for feedback in row.get("feedbacks", []):
+        feedbacks.append(
+            {
+                "id": int(feedback["id"]),
+                "message": feedback["message"],
+                "created_at": _iso(feedback["created_at"]) or "",
+            }
+        )
+
     public = _public_user(row)
     public.update(
         {
             "updated_at": _iso(row["updated_at"]) or "",
             "last_prediction_at": _iso(row.get("last_prediction_at")),
             "last_feedback_at": _iso(row.get("last_feedback_at")),
+            "feedbacks": feedbacks,
         }
     )
     return public
@@ -429,7 +442,22 @@ def list_admin_users() -> dict:
                         SELECT max(f.created_at)
                         FROM feedback f
                         WHERE f.email = u.email
-                    ) AS last_feedback_at
+                    ) AS last_feedback_at,
+                    coalesce(
+                        (
+                            SELECT json_agg(
+                                json_build_object(
+                                    'id', f.id,
+                                    'message', f.message,
+                                    'created_at', f.created_at
+                                )
+                                ORDER BY f.created_at DESC
+                            )
+                            FROM feedback f
+                            WHERE f.email = u.email
+                        ),
+                        '[]'::json
+                    ) AS feedbacks
                 FROM users u
                 ORDER BY u.registered_at DESC
                 """
