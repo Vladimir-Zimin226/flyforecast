@@ -35,7 +35,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -139,7 +140,8 @@ label,
   font-weight: 800;
 }
 
-input {
+input,
+textarea {
   width: 100%;
   padding: 15px 16px;
   border: 2px solid var(--color-stroke);
@@ -149,9 +151,23 @@ input {
   outline: none;
 }
 
-input:focus {
+textarea {
+  min-height: 126px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+input:focus,
+textarea:focus {
   border-color: var(--color-button);
   box-shadow: 0 0 0 4px rgba(127, 90, 240, 0.22);
+}
+
+input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  accent-color: var(--color-button);
 }
 
 button,
@@ -181,6 +197,29 @@ button:disabled {
   background: var(--surface-raised);
   color: var(--color-headline);
   box-shadow: none;
+}
+
+.compact-button {
+  width: fit-content;
+  margin-bottom: 16px;
+}
+
+.text-button {
+  display: inline;
+  width: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-tertiary);
+  font-weight: 900;
+  text-decoration: underline;
+  box-shadow: none;
+  transform: none;
+}
+
+.text-button:hover:not(:disabled) {
+  transform: none;
 }
 
 .small {
@@ -406,6 +445,24 @@ button:disabled {
     display: block;
   }
 
+  .hero-actions,
+  .cookie-actions,
+  .auth-tabs {
+    width: 100%;
+  }
+
+  .hero-actions button,
+  .cookie-actions button,
+  .auth-tabs button {
+    width: 100%;
+  }
+
+  .cookie-banner {
+    position: static;
+    display: grid;
+    border-radius: 18px;
+  }
+
   .card,
   .hero {
     border-radius: 22px;
@@ -435,4 +492,114 @@ button:disabled {
   .calendar-header strong {
     font-size: 18px;
   }
+}
+
+.success {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 16px;
+  background: rgba(44, 182, 125, 0.16);
+  color: #8ee8bd;
+  font-weight: 800;
+}
+
+.notice {
+  margin: 0;
+  padding: 14px 16px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 16px;
+  background: rgba(127, 90, 240, 0.16);
+  color: var(--color-headline);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.hero-actions,
+.cookie-actions,
+.auth-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.hero-actions {
+  justify-content: flex-end;
+}
+
+.cookie-banner {
+  position: sticky;
+  z-index: 40;
+  top: 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 20px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 22px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.cookie-banner strong {
+  color: var(--color-headline);
+  font-size: 18px;
+}
+
+.cookie-banner p {
+  margin: 6px 0 0;
+}
+
+.account-card {
+  display: grid;
+  gap: 12px;
+}
+
+.feedback-form {
+  margin-top: 0;
+}
+
+.checkbox-row {
+  grid-template-columns: 20px 1fr;
+  align-items: start;
+  gap: 12px;
+  color: var(--color-paragraph);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.checkbox-row span {
+  margin-top: -2px;
+}
+
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.policy-link {
+  margin-top: 8px;
+}
+
+.policy-page {
+  max-width: 900px;
+}
+
+.legal-card h1 {
+  font-size: clamp(34px, 6vw, 64px);
+}
+
+.legal-card h2 {
+  margin-top: 28px;
+  font-size: clamp(24px, 3vw, 32px);
+}
+
+.legal-card li {
+  margin-bottom: 10px;
+  color: var(--color-paragraph);
+  line-height: 1.5;
 }

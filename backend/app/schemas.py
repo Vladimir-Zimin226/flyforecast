@@ -2,13 +2,46 @@ from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
-    username: str
+    email: str
     password: str
 
 
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class RegisterRequest(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=254)
+    password: str = Field(min_length=8, max_length=128)
+    personal_data_consent: bool
+    analytics_consent: bool = False
+    initial_prediction_count: int = Field(default=0, ge=0, le=5)
+
+
+class UserProfileResponse(BaseModel):
+    name: str
+    email: str
+    prediction_count: int
+    feedback_count: int
+    registered_at: str
+    personal_data_consent: bool
+    analytics_consent: bool
+
+
+class FeedbackRequest(BaseModel):
+    message: str = Field(min_length=3, max_length=2000)
+
+
+class FeedbackResponse(BaseModel):
+    status: str
+
+
+class ConsentRequest(BaseModel):
+    event: str = Field(pattern="^(necessary_cookies_ack|analytics_consent)$")
+    necessary_cookies_ack: bool = False
+    analytics_consent: bool = False
 
 
 class WeatherSnapshot(BaseModel):

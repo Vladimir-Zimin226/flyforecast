@@ -11,6 +11,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.config import get_settings
 
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 
 def _b64encode(data: bytes) -> str:
@@ -75,4 +76,13 @@ def verify_token(token: str) -> str:
 
 
 def require_user(credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]) -> str:
+    return verify_token(credentials.credentials)
+
+
+def optional_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(optional_security)],
+) -> str | None:
+    if credentials is None:
+        return None
+
     return verify_token(credentials.credentials)

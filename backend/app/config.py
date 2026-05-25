@@ -18,6 +18,9 @@ class Settings(BaseSettings):
 
     flyforecast_dataset_path: str = "/app/data/processed/dataset_daily_flights.csv"
     prediction_log_path: str = "/app/data/interim/prediction_logs.jsonl"
+    user_store_path: str = "/app/data/interim/users.json"
+    feedback_log_path: str = "/app/data/interim/feedback_logs.jsonl"
+    consent_log_path: str = "/app/data/interim/consent_logs.jsonl"
 
     airport_latitude: float = 43.958
     airport_longitude: float = 145.683

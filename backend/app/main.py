@@ -8,9 +8,18 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.auth import create_token, require_user
+from app.auth import create_token, optional_user, require_user
 from app.config import get_settings
-from app.schemas import LoginRequest, LoginResponse, PredictResponse
+from app.schemas import (
+    ConsentRequest,
+    FeedbackRequest,
+    FeedbackResponse,
+    LoginRequest,
+    LoginResponse,
+    PredictResponse,
+    RegisterRequest,
+    UserProfileResponse,
+)
 from app.services.history import get_historical_snapshot
 from app.services.llm import generate_user_explanation
 from app.services.predictor import (
@@ -23,6 +32,14 @@ from app.services.predictor import (
     make_decision,
 )
 from app.services.weather import fetch_weather_for_date
+from app.services.users import (
+    authenticate_user,
+    get_user,
+    increment_prediction_count,
+    log_consent,
+    register_user,
+    save_feedback,
+)
 
 
 logging.basicConfig(
@@ -57,19 +74,61 @@ def health() -> dict:
 
 @app.post("/auth/login", response_model=LoginResponse)
 def login(payload: LoginRequest) -> LoginResponse:
-    logger.info("login_attempt username=%s", payload.username)
+    logger.info("login_attempt email=%s", payload.email)
 
-    if payload.username != settings.test_username or payload.password != settings.test_password:
-        logger.warning("login_failed username=%s reason=invalid_credentials", payload.username)
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+    user = authenticate_user(payload.email, payload.password)
 
-    logger.info("login_success username=%s", payload.username)
-    return LoginResponse(access_token=create_token(payload.username))
+    logger.info("login_success email=%s", user["email"])
+    return LoginResponse(access_token=create_token(user["email"]))
+
+
+@app.post("/auth/register", response_model=LoginResponse)
+def register(payload: RegisterRequest) -> LoginResponse:
+    logger.info("register_attempt email=%s", payload.email)
+
+    user = register_user(
+        name=payload.name,
+        email=payload.email,
+        password=payload.password,
+        personal_data_consent=payload.personal_data_consent,
+        analytics_consent=payload.analytics_consent,
+        initial_prediction_count=payload.initial_prediction_count,
+    )
+
+    logger.info("register_success email=%s", user["email"])
+    return LoginResponse(access_token=create_token(user["email"]))
+
+
+@app.get("/me", response_model=UserProfileResponse)
+def me(user: Annotated[str, Depends(require_user)]) -> UserProfileResponse:
+    return UserProfileResponse(**get_user(user))
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+def feedback(
+    payload: FeedbackRequest,
+    user: Annotated[str, Depends(require_user)],
+) -> FeedbackResponse:
+    save_feedback(user, payload.message)
+    logger.info("feedback_saved email=%s message_length=%s", user, len(payload.message))
+    return FeedbackResponse(status="ok")
+
+
+@app.post("/consents", response_model=FeedbackResponse)
+def consent(payload: ConsentRequest) -> FeedbackResponse:
+    log_consent(
+        email=None,
+        event=payload.event,
+        necessary_cookies_ack=payload.necessary_cookies_ack,
+        analytics_consent=payload.analytics_consent,
+    )
+    logger.info("consent_logged event=%s analytics_consent=%s", payload.event, payload.analytics_consent)
+    return FeedbackResponse(status="ok")
 
 
 @app.get("/predict", response_model=PredictResponse)
 async def predict(
-    user: Annotated[str, Depends(require_user)],
+    user: Annotated[str | None, Depends(optional_user)],
     target_date: date = Query(alias="date"),
     session_prediction_number: int = Query(default=1, ge=1),
     utm_source: str | None = Query(default=None),
@@ -79,7 +138,7 @@ async def predict(
     logger.info(
         "predict_started request_id=%s username=%s target_date=%s session_prediction_number=%s utm_source=%s",
         request_id,
-        user,
+        user or "anonymous",
         target_date.isoformat(),
         session_prediction_number,
         utm_source,
@@ -221,8 +280,8 @@ async def predict(
 
     log_prediction(
         result=result,
-        username=user,
-        session_prediction_number=session_prediction_number,
+        username=user or "anonymous",
+        session_prediction_number=increment_prediction_count(user) if user else session_prediction_number,
         utm_source=utm_source,
         request_id=request_id,
     )
@@ -258,7 +317,7 @@ def log_prediction(
         "model_version": result.model_version,
         "data_version": result.data_version,
         "session_prediction_number": session_prediction_number,
-        "cta_shown": session_prediction_number >= 2,
+        "cta_shown": session_prediction_number >= 5,
         "utm_source": utm_source,
         "weather_available": result.weather.available,
         "weather_source": result.weather.source,
