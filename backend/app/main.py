@@ -322,7 +322,12 @@ async def predict(
         disclaimer=DISCLAIMER,
     )
 
-    session_prediction_number = increment_prediction_count(user) if user else session_prediction_number
+    is_admin_user = bool(user) and user.strip().lower() == settings.admin_email.strip().lower()
+    session_prediction_number = (
+        session_prediction_number
+        if not user or is_admin_user
+        else increment_prediction_count(user)
+    )
 
     log_prediction(
         result=result,
@@ -332,7 +337,7 @@ async def predict(
         request_id=request_id,
     )
 
-    if user:
+    if user and not is_admin_user:
         save_prediction_event(
             email=user,
             request_id=request_id,

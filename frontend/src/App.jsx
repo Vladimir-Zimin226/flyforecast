@@ -377,8 +377,9 @@ export default function App() {
   const maxDate = useMemo(() => addDaysIso(365), []);
   const calendarDays = useMemo(() => getCalendarDays(calendarViewDate), [calendarViewDate]);
   const selectedDateObject = useMemo(() => parseIsoDate(date), [date]);
+  const activeToken = token || adminToken;
   const effectivePredictionCount = profile?.prediction_count ?? predictionCount;
-  const mustRegister = !token && predictionCount >= FREE_ANON_PREDICTION_LIMIT;
+  const mustRegister = !activeToken && predictionCount >= FREE_ANON_PREDICTION_LIMIT;
 
   useEffect(() => {
     if (!token) {
@@ -406,8 +407,24 @@ export default function App() {
     });
 
     if (!response.ok) {
-      localStorage.removeItem(TOKEN_KEY);
-      setToken("");
+      const adminResponse = await fetch(`${API_BASE_URL}/admin/users`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`
+        }
+      });
+
+      if (adminResponse.ok) {
+        localStorage.setItem(ADMIN_TOKEN_KEY, authToken);
+        setAdminToken(authToken);
+        setAdminData(await adminResponse.json());
+      } else {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(ADMIN_TOKEN_KEY);
+        setToken("");
+        setAdminToken("");
+        setAdminData(null);
+      }
+
       setProfile(null);
       return;
     }
@@ -613,7 +630,9 @@ export default function App() {
   }
 
   function handleAdminLogout() {
+    localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(ADMIN_TOKEN_KEY);
+    setToken("");
     setAdminToken("");
     setAdminData(null);
     setAdminEditEmail("");
@@ -729,7 +748,7 @@ export default function App() {
 
     setIsLoading(true);
 
-    const nextPredictionNumber = token ? effectivePredictionCount + 1 : predictionCount + 1;
+    const nextPredictionNumber = activeToken ? effectivePredictionCount + 1 : predictionCount + 1;
 
     try {
       const params = new URLSearchParams({
@@ -737,7 +756,7 @@ export default function App() {
         session_prediction_number: String(nextPredictionNumber)
       });
 
-      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const headers = activeToken ? { Authorization: `Bearer ${activeToken}` } : {};
       const response = await fetch(`${API_BASE_URL}/predict?${params.toString()}`, { headers });
 
       if (!response.ok) {
@@ -748,7 +767,9 @@ export default function App() {
       const data = await response.json();
       setResult(data);
 
-      if (token) {
+      if (adminToken) {
+        await loadAdminUsers(adminToken);
+      } else if (token) {
         await loadProfile(token);
       } else {
         setPredictionCount(nextPredictionNumber);
@@ -1219,9 +1240,11 @@ export default function App() {
           <div>
             <h2>Когда хотите вылететь с Кунашира?</h2>
             <p className="small">
-              {token
-                ? `Прогнозов в личном кабинете: ${effectivePredictionCount}.`
-                : `Бесплатных прогнозов без регистрации: ${Math.min(predictionCount, FREE_ANON_PREDICTION_LIMIT)} из ${FREE_ANON_PREDICTION_LIMIT}.`}
+              {adminToken
+                ? "Администратор: прогнозы без лимита."
+                : token
+                  ? `Прогнозов в личном кабинете: ${effectivePredictionCount}.`
+                  : `Бесплатных прогнозов без регистрации: ${Math.min(predictionCount, FREE_ANON_PREDICTION_LIMIT)} из ${FREE_ANON_PREDICTION_LIMIT}.`}
             </p>
           </div>
         </div>
