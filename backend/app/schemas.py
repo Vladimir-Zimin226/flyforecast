@@ -94,6 +94,62 @@ class AdminUsersResponse(BaseModel):
     users: list[AdminUserResponse]
 
 
+class BackgroundServiceHealth(BaseModel):
+    name: str
+    status: str
+    last_seen_at: str | None = None
+    message: str
+
+
+class BoardCollectorStatus(BaseModel):
+    health: BackgroundServiceHealth
+    dataset_path: str
+    errors_path: str
+    total_rows: int
+    rows_last_observation: int
+    latest_observed_at: str | None = None
+    latest_observation_date: str | None = None
+    latest_statuses: dict[str, int]
+    recent_errors: list[dict[str, str]]
+
+
+class ForecastMonitorRun(BaseModel):
+    id: int | None = None
+    run_date: str
+    created_at: str
+    status: str
+    predictions_count: int
+    expected_predictions: int
+    error: str | None = None
+
+
+class ForecastMonitorPrediction(BaseModel):
+    target_date: str
+    horizon_days: int
+    probability_flight: float
+    decision: str
+    confidence: str
+    created_at: str
+    outcome_status: str | None = None
+    evaluated: bool = False
+
+
+class ForecastMonitorStatus(BaseModel):
+    health: BackgroundServiceHealth
+    db_path: str
+    total_runs: int
+    total_predictions: int
+    total_evaluations: int
+    latest_run: ForecastMonitorRun | None = None
+    recent_runs: list[ForecastMonitorRun]
+    recent_predictions: list[ForecastMonitorPrediction]
+
+
+class AdminServicesResponse(BaseModel):
+    board_collector: BoardCollectorStatus
+    forecast_monitor: ForecastMonitorStatus
+
+
 class AdminUpdateUserRequest(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=120)
     email: str | None = Field(default=None, min_length=5, max_length=254)

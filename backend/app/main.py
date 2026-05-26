@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.schemas import (
     ConsentRequest,
     AdminUpdateUserRequest,
+    AdminServicesResponse,
     AdminUsersResponse,
     FeedbackRequest,
     FeedbackResponse,
@@ -22,6 +23,7 @@ from app.schemas import (
     RegisterRequest,
     UserProfileResponse,
 )
+from app.services.background_services import get_admin_services_status
 from app.services.history import get_historical_snapshot
 from app.services.llm import generate_user_explanation
 from app.services.predictor import (
@@ -142,6 +144,12 @@ def consent(payload: ConsentRequest) -> FeedbackResponse:
 def admin_users(admin: Annotated[str, Depends(require_admin)]) -> AdminUsersResponse:
     logger.info("admin_users_requested admin=%s", admin)
     return AdminUsersResponse(**list_admin_users())
+
+
+@app.get("/admin/services", response_model=AdminServicesResponse)
+def admin_services(admin: Annotated[str, Depends(require_admin)]) -> AdminServicesResponse:
+    logger.info("admin_services_requested admin=%s", admin)
+    return AdminServicesResponse(**get_admin_services_status())
 
 
 @app.patch("/admin/users/{email}", response_model=UserProfileResponse)

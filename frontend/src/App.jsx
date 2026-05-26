@@ -85,6 +85,19 @@ function decisionLabel(decision) {
   return decision === "yes" ? "Да" : "Нет";
 }
 
+function formatDateTime(value) {
+  if (!value) {
+    return "нет данных";
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleString("ru-RU");
+}
+
 function confidenceLabel(confidence) {
   const labels = {
     low: "низкая",
@@ -93,6 +106,18 @@ function confidenceLabel(confidence) {
   };
 
   return labels[confidence] || confidence;
+}
+
+function serviceStatusLabel(status) {
+  const labels = {
+    ok: "работает",
+    warning: "требует внимания",
+    error: "ошибка",
+    success: "успешно",
+    partial: "частично"
+  };
+
+  return labels[status] || status;
 }
 
 function renderFormattedExplanation(text) {
@@ -375,6 +400,7 @@ export default function App() {
   const [adminToken, setAdminToken] = useState(localStorage.getItem(ADMIN_TOKEN_KEY) || "");
   const [profile, setProfile] = useState(null);
   const [adminData, setAdminData] = useState(null);
+  const [adminServices, setAdminServices] = useState(null);
   const [adminEditEmail, setAdminEditEmail] = useState("");
   const [adminEditForm, setAdminEditForm] = useState({});
   const [authMode, setAuthMode] = useState("register");
@@ -423,10 +449,12 @@ export default function App() {
   useEffect(() => {
     if (!adminToken) {
       setAdminData(null);
+      setAdminServices(null);
       return;
     }
 
     loadAdminUsers(adminToken);
+    loadAdminServices(adminToken);
   }, [adminToken]);
 
   async function loadProfile(authToken = token) {
@@ -447,12 +475,14 @@ export default function App() {
         localStorage.setItem(ADMIN_TOKEN_KEY, authToken);
         setAdminToken(authToken);
         setAdminData(await adminResponse.json());
+        await loadAdminServices(authToken);
       } else {
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(ADMIN_TOKEN_KEY);
         setToken("");
         setAdminToken("");
         setAdminData(null);
+        setAdminServices(null);
       }
 
       setProfile(null);
@@ -473,10 +503,23 @@ export default function App() {
       localStorage.removeItem(ADMIN_TOKEN_KEY);
       setAdminToken("");
       setAdminData(null);
+      setAdminServices(null);
       return;
     }
 
     setAdminData(await response.json());
+  }
+
+  async function loadAdminServices(authToken = adminToken) {
+    const response = await fetch(`${API_BASE_URL}/admin/services`, {
+      headers: {
+        Authorization: `Bearer ${authToken}`
+      }
+    });
+
+    if (response.ok) {
+      setAdminServices(await response.json());
+    }
   }
 
   function sendConsentEvent(event, payload) {
@@ -587,10 +630,12 @@ export default function App() {
         localStorage.setItem(ADMIN_TOKEN_KEY, data.access_token);
         setAdminToken(data.access_token);
         setAdminData(await adminResponse.json());
+        await loadAdminServices(data.access_token);
       } else {
         localStorage.removeItem(ADMIN_TOKEN_KEY);
         setAdminToken("");
         setAdminData(null);
+        setAdminServices(null);
       }
 
       setAuthPanelOpen(false);
@@ -665,6 +710,7 @@ export default function App() {
     setToken("");
     setAdminToken("");
     setAdminData(null);
+    setAdminServices(null);
     setAdminEditEmail("");
     setAdminEditForm({});
   }
@@ -799,6 +845,7 @@ export default function App() {
 
       if (adminToken) {
         await loadAdminUsers(adminToken);
+        await loadAdminServices(adminToken);
       } else if (token) {
         await loadProfile(token);
       } else {
@@ -868,7 +915,13 @@ export default function App() {
           <div className="hero-actions">
             {adminToken ? (
               <>
-                <button className="secondary" onClick={() => loadAdminUsers(adminToken)}>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    loadAdminUsers(adminToken);
+                    loadAdminServices(adminToken);
+                  }}
+                >
                   Обновить админку
                 </button>
                 <button className="secondary" onClick={handleAdminLogout}>
@@ -1062,6 +1115,113 @@ export default function App() {
               <strong>{adminData.analytics_consents}</strong>
             </div>
           </div>
+
+          {adminServices && (
+            <div className="service-panel">
+              <div className="section-heading">
+                <div>
+                  <div className="eyebrow">Фоновые сервисы</div>
+                  <h3>Табло и ежедневные прогнозы</h3>
+                </div>
+              </div>
+
+              <div className="service-grid">
+                <article className={`service-card service-${adminServices.board_collector.health.status}`}>
+                  <div className="service-card-header">
+                    <div>
+                      <strong>{adminServices.board_collector.health.name}</strong>
+                      <span>{serviceStatusLabel(adminServices.board_collector.health.status)}</span>
+                    </div>
+                    <span className="service-pill">{adminServices.board_collector.rows_last_observation} строк</span>
+                  </div>
+                  <p>{adminServices.board_collector.health.message}</p>
+                  <div className="admin-user-stats">
+                    <span>Последняя проверка: {formatDateTime(adminServices.board_collector.latest_observed_at)}</span>
+                    <span>Всего строк: {adminServices.board_collector.total_rows}</span>
+                    <span>Дата наблюдения: {adminServices.board_collector.latest_observation_date || "нет данных"}</span>
+                  </div>
+                  <div className="status-chips">
+                    {Object.entries(adminServices.board_collector.latest_statuses || {}).map(([status, count]) => (
+                      <span key={status}>
+                        {status}: {count}
+                      </span>
+                    ))}
+                  </div>
+                  {adminServices.board_collector.recent_errors.length > 0 && (
+                    <div className="service-errors">
+                      <strong>Последние ошибки источников</strong>
+                      {adminServices.board_collector.recent_errors.map((item, index) => (
+                        <p key={`${item.observed_at}-${item.source}-${index}`}>
+                          {formatDateTime(item.observed_at)} · {item.source}: {item.error}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </article>
+
+                <article className={`service-card service-${adminServices.forecast_monitor.health.status}`}>
+                  <div className="service-card-header">
+                    <div>
+                      <strong>{adminServices.forecast_monitor.health.name}</strong>
+                      <span>{serviceStatusLabel(adminServices.forecast_monitor.health.status)}</span>
+                    </div>
+                    <span className="service-pill">{adminServices.forecast_monitor.total_predictions} прогнозов</span>
+                  </div>
+                  <p>{adminServices.forecast_monitor.health.message}</p>
+                  <div className="admin-user-stats">
+                    <span>Последний запуск: {formatDateTime(adminServices.forecast_monitor.health.last_seen_at)}</span>
+                    <span>Запусков: {adminServices.forecast_monitor.total_runs}</span>
+                    <span>Оценено: {adminServices.forecast_monitor.total_evaluations}</span>
+                  </div>
+                  {adminServices.forecast_monitor.latest_run && (
+                    <div className="service-run-summary">
+                      <strong>Последний набор прогнозов</strong>
+                      <span>
+                        {formatDateTime(adminServices.forecast_monitor.latest_run.created_at)} ·{" "}
+                        {serviceStatusLabel(adminServices.forecast_monitor.latest_run.status)} ·{" "}
+                        {adminServices.forecast_monitor.latest_run.predictions_count}/
+                        {adminServices.forecast_monitor.latest_run.expected_predictions} создано
+                      </span>
+                      {adminServices.forecast_monitor.latest_run.error && (
+                        <p>{adminServices.forecast_monitor.latest_run.error}</p>
+                      )}
+                    </div>
+                  )}
+                </article>
+              </div>
+
+              <div className="service-tables">
+                <div>
+                  <strong>Последние запуски forecast monitor</strong>
+                  <div className="service-list">
+                    {adminServices.forecast_monitor.recent_runs.map((run) => (
+                      <div className="service-list-row" key={`${run.id}-${run.created_at}`}>
+                        <span>{formatDateTime(run.created_at)}</span>
+                        <span>{serviceStatusLabel(run.status)}</span>
+                        <span>
+                          {run.predictions_count}/{run.expected_predictions} прогнозов
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <strong>Последние фоновые прогнозы</strong>
+                  <div className="service-list">
+                    {adminServices.forecast_monitor.recent_predictions.map((prediction) => (
+                      <div className="service-list-row" key={`${prediction.created_at}-${prediction.target_date}`}>
+                        <span>{prediction.target_date}</span>
+                        <span>{probabilityPercent(prediction.probability_flight)}%</span>
+                        <span>{decisionLabel(prediction.decision)}</span>
+                        <span>{prediction.evaluated ? "оценён" : prediction.outcome_status || "ожидает факт"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="admin-users">
             {adminData.users.map((user) => (

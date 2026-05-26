@@ -154,6 +154,20 @@ def init_db(conn: sqlite3.Connection) -> None:
             horizon_bucket TEXT NOT NULL,
             evaluated_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS service_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service_name TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('success', 'error')),
+            started_at TEXT NOT NULL,
+            finished_at TEXT NOT NULL,
+            timezone TEXT NOT NULL,
+            predictions_inserted INTEGER NOT NULL DEFAULT 0,
+            outcomes_seen INTEGER NOT NULL DEFAULT 0,
+            outcomes_changed INTEGER NOT NULL DEFAULT 0,
+            evaluations_changed INTEGER NOT NULL DEFAULT 0,
+            error TEXT
+        );
         """
     )
     conn.commit()
@@ -553,11 +567,65 @@ def export_metrics(conn: sqlite3.Connection, output_path: Path) -> None:
 
 
 def export_all(conn: sqlite3.Connection, export_dir: Path) -> None:
+    export_table(conn, "service_runs", export_dir / "forecast_service_runs.csv")
     export_table(conn, "prediction_runs", export_dir / "forecast_prediction_runs.csv")
     export_table(conn, "predictions", export_dir / "forecast_predictions.csv")
     export_table(conn, "board_outcomes", export_dir / "forecast_outcomes.csv")
     export_table(conn, "prediction_evaluations", export_dir / "forecast_evaluations.csv")
     export_metrics(conn, export_dir / "forecast_metrics_summary.csv")
+
+
+def record_service_run(
+    conn: sqlite3.Connection,
+    *,
+    status: str,
+    started_at: datetime,
+    finished_at: datetime,
+    timezone_name: str,
+    predictions_inserted: int = 0,
+    outcomes_seen: int = 0,
+    outcomes_changed: int = 0,
+    evaluations_changed: int = 0,
+    error: str | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO service_runs (
+            service_name, status, started_at, finished_at, timezone,
+            predictions_inserted, outcomes_seen, outcomes_changed, evaluations_changed, error
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            "forecast_monitor",
+            status,
+            started_at.isoformat(),
+            finished_at.isoformat(),
+            timezone_name,
+            predictions_inserted,
+            outcomes_seen,
+            outcomes_changed,
+            evaluations_changed,
+            error,
+        ),
+    )
+    conn.commit()
+
+
+def record_service_error(db_path: Path, timezone_name: str, started_at: datetime, exc: Exception) -> None:
+    try:
+        with connect(db_path) as conn:
+            init_db(conn)
+            record_service_run(
+                conn,
+                status="error",
+                started_at=started_at,
+                finished_at=now_in_timezone(timezone_name),
+                timezone_name=timezone_name,
+                error=f"{type(exc).__name__}: {exc}",
+            )
+    except Exception:
+        pass
 
 
 async def run_once(args: argparse.Namespace) -> None:
@@ -566,20 +634,35 @@ async def run_once(args: argparse.Namespace) -> None:
     horizons = parse_horizons(args.horizons, args.extra_horizons)
     now = now_in_timezone(timezone_name)
 
-    with connect(Path(args.db_path)) as conn:
-        init_db(conn)
-        if now.hour >= args.prediction_start_hour:
-            predictions_inserted = await make_prediction_rows(conn, horizons, timezone_name)
-        else:
-            predictions_inserted = 0
-        outcomes = build_outcomes_from_board(
-            board_path=Path(args.board_status_path),
-            today=now.date(),
-            finalize_lag_days=args.finalize_lag_days,
-        )
-        outcomes_changed = upsert_outcomes(conn, outcomes)
-        evaluations_changed = evaluate_predictions(conn, now)
-        export_all(conn, Path(args.export_dir))
+    try:
+        with connect(Path(args.db_path)) as conn:
+            init_db(conn)
+            if now.hour >= args.prediction_start_hour:
+                predictions_inserted = await make_prediction_rows(conn, horizons, timezone_name)
+            else:
+                predictions_inserted = 0
+            outcomes = build_outcomes_from_board(
+                board_path=Path(args.board_status_path),
+                today=now.date(),
+                finalize_lag_days=args.finalize_lag_days,
+            )
+            outcomes_changed = upsert_outcomes(conn, outcomes)
+            evaluations_changed = evaluate_predictions(conn, now)
+            record_service_run(
+                conn,
+                status="success",
+                started_at=now,
+                finished_at=now_in_timezone(timezone_name),
+                timezone_name=timezone_name,
+                predictions_inserted=predictions_inserted,
+                outcomes_seen=len(outcomes),
+                outcomes_changed=outcomes_changed,
+                evaluations_changed=evaluations_changed,
+            )
+            export_all(conn, Path(args.export_dir))
+    except Exception as exc:
+        record_service_error(Path(args.db_path), timezone_name, now, exc)
+        raise
 
     print(
         f"{now.isoformat()} forecast_monitor "

@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     user_store_path: str = "/app/data/interim/users.json"
     feedback_log_path: str = "/app/data/interim/feedback_logs.jsonl"
     consent_log_path: str = "/app/data/interim/consent_logs.jsonl"
+    forecast_monitor_db_path: str = "/app/data/interim/evaluation/forecast_monitor.sqlite"
+    flight_status_dataset_path: str = "/app/data/raw/flight_status/kunashir_flight_status_hourly.csv"
+    flight_status_errors_path: str = "/app/data/raw/flight_status/collection_errors.csv"
+    background_service_stale_hours: int = 26
 
     airport_latitude: float = 43.958
     airport_longitude: float = 145.683
