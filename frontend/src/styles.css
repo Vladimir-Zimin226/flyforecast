@@ -473,12 +473,6 @@ button:disabled {
   box-shadow: 0 20px 50px rgba(1, 1, 1, 0.28);
 }
 
-.decision-icon svg {
-  position: relative;
-  width: 82px;
-  height: 82px;
-}
-
 .decision-icon-yes {
   background: linear-gradient(145deg, rgba(44, 182, 125, 0.36), rgba(20, 184, 166, 0.18));
 }
@@ -498,35 +492,26 @@ button:disabled {
   box-shadow: 0 0 0 8px rgba(250, 204, 21, 0.18);
 }
 
-.decision-plane-shadow {
-  fill: rgba(1, 1, 1, 0.22);
-  transform: translate(2px, 3px);
-}
-
-.decision-plane {
-  fill: #fffffe;
-}
-
-.decision-plane-wing {
-  fill: #bae6fd;
-}
-
-.decision-plane-tail {
-  fill: #dbeafe;
-}
-
-.decision-plane-window {
-  fill: none;
-  stroke: #155e75;
-  stroke-linecap: round;
-  stroke-width: 3.4;
+.decision-plane-symbol {
+  position: relative;
+  z-index: 1;
+  color: #fffffe;
+  font-family: "Segoe UI Symbol", "Apple Color Emoji", "Noto Color Emoji", system-ui, sans-serif;
+  font-size: 58px;
+  line-height: 1;
+  text-shadow: 0 8px 18px rgba(1, 1, 1, 0.26);
+  transform: rotate(-8deg);
 }
 
 .decision-cross {
-  fill: none;
-  stroke: #ff7a7a;
-  stroke-linecap: round;
-  stroke-width: 9;
+  position: absolute;
+  z-index: 2;
+  width: 72px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ff7a7a;
+  box-shadow: 0 4px 12px rgba(1, 1, 1, 0.22);
+  transform: rotate(-42deg);
 }
 
 .result-probability-box {
@@ -646,9 +631,13 @@ button:disabled {
     border-radius: 22px;
   }
 
-  .decision-icon svg {
-    width: 66px;
-    height: 66px;
+  .decision-plane-symbol {
+    font-size: 46px;
+  }
+
+  .decision-cross {
+    width: 58px;
+    height: 7px;
   }
 
   .decision-sun {

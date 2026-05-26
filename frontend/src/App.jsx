@@ -113,29 +113,8 @@ function PredictionDecisionIcon({ decision }) {
   return (
     <div className={`decision-icon decision-icon-${decision}`} aria-hidden="true">
       {isPositive && <span className="decision-sun" />}
-      <svg viewBox="0 0 128 128" focusable="false">
-        <path
-          className="decision-plane-shadow"
-          d="M18 72c22.6-6.6 47.9-13.2 75.8-19.8 6.6-1.6 14.5-1.4 20.2 2.2 2.4 1.5 2.2 5.1-.4 6.2-4.9 2-10.8 2.9-17.7 2.8L76.1 78.9l18.2 23.8-11.4 3.1-31.8-19.4-21.7 9.1-9.1-4 15.2-14.1-17.5-5.4z"
-        />
-        <path
-          className="decision-plane"
-          d="M15.8 66.4c23-6.8 48.9-13.5 77.6-20.4 6.8-1.6 15.4-1.4 21.4 2.4 2.8 1.8 2.5 6-.6 7.2-5 2.1-11.1 3-18.2 2.9L75.2 74.8l18.5 24.3-12.3 3.4-32.2-19.8-21.9 9.2-9.8-4.4 15.8-14.6-17.7-5.5c-2.2-.7-2.1-4.3.2-5z"
-        />
-        <path
-          className="decision-plane-wing"
-          d="M52 68.5 94.1 45.9c5.9-1.2 13.4-.7 19.1 2.7L75.2 74.8 52 68.5z"
-        />
-        <path
-          className="decision-plane-tail"
-          d="m27.3 91.9 21.9-9.2-16-9.8-15.8 14.6 9.9 4.4z"
-        />
-        <path
-          className="decision-plane-window"
-          d="M82 54.8h6.7M94 52.1h6.7M106 51.6h5.5"
-        />
-        {!isPositive && <path className="decision-cross" d="M26 24 102 102" />}
-      </svg>
+      <span className="decision-plane-symbol">✈</span>
+      {!isPositive && <span className="decision-cross" />}
     </div>
   );
 }
