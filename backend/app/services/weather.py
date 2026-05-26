@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import date, datetime
 
 import httpx
@@ -5,6 +7,8 @@ import httpx
 from app.config import get_settings
 from app.schemas import WeatherSnapshot
 
+
+logger = logging.getLogger("flyforecast.weather")
 
 HOURLY_FIELDS = [
     "temperature_2m",
@@ -17,6 +21,18 @@ HOURLY_FIELDS = [
     "wind_gusts_10m",
 ]
 
+OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_RETRIES = 2
+OPEN_METEO_RETRY_DELAY_SECONDS = 0.8
+
+
+def _unavailable_weather(reason: str) -> WeatherSnapshot:
+    return WeatherSnapshot(
+        source="open-meteo",
+        available=False,
+        reason=reason,
+    )
+
 
 async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
     """
@@ -28,18 +44,10 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
     horizon_days = (target_date - today).days
 
     if horizon_days < 0:
-        return WeatherSnapshot(
-            source="open-meteo",
-            available=False,
-            reason="Past dates are not supported by /predict in MVP.",
-        )
+        return _unavailable_weather("Past dates are not supported by /predict in MVP.")
 
     if horizon_days > 16:
-        return WeatherSnapshot(
-            source="open-meteo",
-            available=False,
-            reason="Open-Meteo forecast is not available for this long horizon in MVP.",
-        )
+        return _unavailable_weather("Open-Meteo forecast is not available for this long horizon in MVP.")
 
     params = {
         "latitude": settings.airport_latitude,
@@ -49,10 +57,39 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
         "hourly": ",".join(HOURLY_FIELDS),
     }
 
+    payload = None
+
     async with httpx.AsyncClient(timeout=10) as client:
-        response = await client.get("https://api.open-meteo.com/v1/forecast", params=params)
-        response.raise_for_status()
-        payload = response.json()
+        for attempt in range(OPEN_METEO_RETRIES + 1):
+            try:
+                response = await client.get(OPEN_METEO_URL, params=params)
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except httpx.HTTPStatusError as exc:
+                status_code = exc.response.status_code
+                logger.warning(
+                    "open_meteo_status_error target_date=%s attempt=%s status_code=%s",
+                    target_date.isoformat(),
+                    attempt + 1,
+                    status_code,
+                )
+                if status_code < 500 or attempt == OPEN_METEO_RETRIES:
+                    return _unavailable_weather(f"Open-Meteo returned HTTP {status_code}.")
+            except (httpx.RequestError, ValueError) as exc:
+                logger.warning(
+                    "open_meteo_request_error target_date=%s attempt=%s error=%s",
+                    target_date.isoformat(),
+                    attempt + 1,
+                    exc,
+                )
+                if attempt == OPEN_METEO_RETRIES:
+                    return _unavailable_weather("Open-Meteo is temporarily unavailable.")
+
+            await asyncio.sleep(OPEN_METEO_RETRY_DELAY_SECONDS * (attempt + 1))
+
+    if payload is None:
+        return _unavailable_weather("Open-Meteo is temporarily unavailable.")
 
     hourly = payload.get("hourly", {})
     times = hourly.get("time", [])
@@ -63,11 +100,7 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
     ]
 
     if not indices:
-        return WeatherSnapshot(
-            source="open-meteo",
-            available=False,
-            reason="No hourly weather rows returned for target date.",
-        )
+        return _unavailable_weather("No hourly weather rows returned for target date.")
 
     # MVP: берём дневное среднее по доступным hourly values.
     aggregated: dict[str, float | None] = {}
