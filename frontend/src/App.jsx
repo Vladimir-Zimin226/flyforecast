@@ -937,9 +937,7 @@ export default function App() {
                 </button>
               </>
             ) : token ? (
-              <button className="secondary desktop-account-action" onClick={handleLogout}>
-                Выйти
-              </button>
+              null
             ) : (
               <>
                 <button
@@ -1367,7 +1365,7 @@ export default function App() {
               <h2>{profile.name}</h2>
               <p className="small">{profile.email}</p>
             </div>
-            <button className="secondary mobile-account-action" onClick={handleLogout}>
+            <button className="secondary account-action" onClick={handleLogout}>
               Выйти
             </button>
           </div>

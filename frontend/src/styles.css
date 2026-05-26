@@ -508,19 +508,14 @@ button:disabled {
     width: 100%;
   }
 
-  .desktop-account-action {
-    display: none;
-  }
-
-  .mobile-account-action {
-    display: inline-flex;
-    width: 100%;
-    margin-top: 10px;
-  }
-
   .account-header {
     display: grid;
     gap: 12px;
+  }
+
+  .account-action {
+    width: 100%;
+    margin-top: 10px;
   }
 
   .cookie-banner {
@@ -604,10 +599,6 @@ button:disabled {
 
 .hero-actions {
   justify-content: flex-end;
-}
-
-.mobile-account-action {
-  display: none;
 }
 
 .cookie-banner {
