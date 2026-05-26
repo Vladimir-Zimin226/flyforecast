@@ -1,0 +1,17 @@
+{
+  "name": "FLYFORECAST.RU",
+  "short_name": "FlyForecast",
+  "description": "Прогноз вероятности вылета через аэропорт Менделеево на Кунашире.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#155e75",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
