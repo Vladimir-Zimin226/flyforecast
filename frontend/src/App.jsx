@@ -108,13 +108,14 @@ function lowConfidenceHint(result) {
 }
 
 function PredictionDecisionIcon({ decision }) {
-  const isPositive = decision === "yes";
-
   return (
     <div className={`decision-icon decision-icon-${decision}`} aria-hidden="true">
-      {isPositive && <span className="decision-sun" />}
-      <span className="decision-plane-symbol">✈</span>
-      {!isPositive && <span className="decision-cross" />}
+      <img
+        src={`/icons/forecast-${decision === "yes" ? "yes" : "no"}.png`}
+        alt=""
+        width="112"
+        height="112"
+      />
     </div>
   );
 }
