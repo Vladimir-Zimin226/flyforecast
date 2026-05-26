@@ -85,6 +85,28 @@ function decisionLabel(decision) {
   return decision === "yes" ? "Да" : "Нет";
 }
 
+function decisionToneLabel(decision) {
+  return decision === "yes" ? "Высокий шанс вылета" : "Риск отмены выше";
+}
+
+function PredictionDecisionIcon({ decision }) {
+  const isPositive = decision === "yes";
+
+  return (
+    <div className={`decision-icon decision-icon-${decision}`} aria-hidden="true">
+      {isPositive && <span className="decision-sun" />}
+      <svg viewBox="0 0 96 96" focusable="false">
+        <path
+          className="decision-plane"
+          d="M14 50.5 74.4 24c3.7-1.6 7.2 2.4 5.2 5.9L58.8 66.5c-1.1 1.9-3.8 2.1-5.2.4L42.7 54.2l-15 8.8c-2.4 1.4-5.2-1.1-4.1-3.7l6.1-14.2-14.9-4.3c-3.2-.9-3.8-5-0.8-6.3z"
+        />
+        <path className="decision-wing" d="M42.7 54.2 78.2 26.5 53.6 66.9 42.7 54.2z" />
+        {!isPositive && <path className="decision-cross" d="M20 20 76 76" />}
+      </svg>
+    </div>
+  );
+}
+
 function formatDateTime(value) {
   if (!value) {
     return "нет данных";
@@ -1069,12 +1091,19 @@ export default function App() {
       {result && (
         <section className={`card result result-${result.decision}`}>
           <div className="result-header">
-            <div>
-              <div className="eyebrow">Дата: {result.date}</div>
-              <h2>{decisionLabel(result.decision)}</h2>
+            <div className="result-decision">
+              <PredictionDecisionIcon decision={result.decision} />
+              <div>
+                <div className="eyebrow">Дата: {result.date}</div>
+                <h2>{decisionLabel(result.decision)}</h2>
+                <span>{decisionToneLabel(result.decision)}</span>
+              </div>
             </div>
 
-            <div className="probability">{probabilityPercent(result.probability_flight)}%</div>
+            <div className="result-probability-box">
+              <span>Вероятность вылета</span>
+              <div className="probability">{probabilityPercent(result.probability_flight)}%</div>
+            </div>
           </div>
 
           <p className="lead">
