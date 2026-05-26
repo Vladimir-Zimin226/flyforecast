@@ -141,6 +141,10 @@ class ForecastMonitorStatus(BaseModel):
     total_runs: int
     total_predictions: int
     total_evaluations: int
+    total_hits: int = 0
+    total_misses: int = 0
+    total_pending: int = 0
+    accuracy: float | None = None
     latest_run: ForecastMonitorRun | None = None
     recent_runs: list[ForecastMonitorRun]
     recent_predictions: list[ForecastMonitorPrediction]

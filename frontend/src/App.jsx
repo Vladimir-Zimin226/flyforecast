@@ -1178,6 +1178,31 @@ export default function App() {
                     <span>Последний запуск: {formatDateTime(adminServices.forecast_monitor.health.last_seen_at)}</span>
                     <span>Запусков: {adminServices.forecast_monitor.total_runs}</span>
                     <span>Оценено: {adminServices.forecast_monitor.total_evaluations}</span>
+                    <span>Угадал: {adminServices.forecast_monitor.total_hits}</span>
+                    <span>Ошибся: {adminServices.forecast_monitor.total_misses}</span>
+                    <span>Ждет факт: {adminServices.forecast_monitor.total_pending}</span>
+                  </div>
+                  <div className="service-summary-grid" aria-label="Сводка фоновых прогнозов">
+                    <div>
+                      <span>Точность</span>
+                      <strong>
+                        {adminServices.forecast_monitor.accuracy === null
+                          ? "нет данных"
+                          : `${Math.round(adminServices.forecast_monitor.accuracy * 100)}%`}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>Угадал</span>
+                      <strong>{adminServices.forecast_monitor.total_hits}</strong>
+                    </div>
+                    <div>
+                      <span>Ошибся</span>
+                      <strong>{adminServices.forecast_monitor.total_misses}</strong>
+                    </div>
+                    <div>
+                      <span>Ожидает факт</span>
+                      <strong>{adminServices.forecast_monitor.total_pending}</strong>
+                    </div>
                   </div>
                   {adminServices.forecast_monitor.latest_run && (
                     <div className="service-run-summary">
@@ -1213,11 +1238,18 @@ export default function App() {
                 </div>
 
                 <div>
-                  <strong>Последние фоновые прогнозы</strong>
-                  <div className="service-list">
+                  <strong>Все фоновые прогнозы</strong>
+                  <div className="service-list service-scroll-list">
                     {adminServices.forecast_monitor.recent_predictions.map((prediction) => (
-                      <div className="service-list-row" key={`${prediction.created_at}-${prediction.target_date}`}>
+                      <div
+                        className={`service-list-row service-list-row-prediction ${
+                          prediction.evaluated ? (prediction.hit ? "prediction-hit" : "prediction-miss") : ""
+                        }`}
+                        key={`${prediction.created_at}-${prediction.target_date}-${prediction.horizon_days}`}
+                      >
                         <span>{prediction.target_date}</span>
+                        <span>{formatDateTime(prediction.created_at)}</span>
+                        <span>{prediction.horizon_days} дн.</span>
                         <span>{probabilityPercent(prediction.probability_flight)}%</span>
                         <span>{decisionLabel(prediction.decision)}</span>
                         <span>{predictionEvaluationLabel(prediction)}</span>

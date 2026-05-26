@@ -183,6 +183,10 @@ def get_forecast_monitor_status() -> dict:
             "total_runs": 0,
             "total_predictions": 0,
             "total_evaluations": 0,
+            "total_hits": 0,
+            "total_misses": 0,
+            "total_pending": 0,
+            "accuracy": None,
             "latest_run": None,
             "recent_runs": [],
             "recent_predictions": [],
@@ -196,6 +200,23 @@ def get_forecast_monitor_status() -> dict:
             if _table_exists(conn, "prediction_evaluations")
             else 0
         )
+        total_hits = 0
+        total_misses = 0
+
+        if _table_exists(conn, "prediction_evaluations"):
+            evaluation_totals = conn.execute(
+                """
+                SELECT
+                    coalesce(sum(hit), 0) AS total_hits,
+                    count(*) - coalesce(sum(hit), 0) AS total_misses
+                FROM prediction_evaluations
+                """
+            ).fetchone()
+            total_hits = int(evaluation_totals["total_hits"] or 0) if evaluation_totals else 0
+            total_misses = int(evaluation_totals["total_misses"] or 0) if evaluation_totals else 0
+
+        total_pending = max(total_predictions - total_evaluations, 0)
+        accuracy = round(total_hits / total_evaluations, 4) if total_evaluations else None
 
         latest_run_row = None
         recent_runs: list[dict[str, Any]] = []
@@ -263,7 +284,6 @@ def get_forecast_monitor_status() -> dict:
                 {outcome_join}
                 {evaluation_join}
                 ORDER BY p.created_at DESC, p.horizon_days ASC
-                LIMIT 12
                 """
             ).fetchall()
             recent_predictions = [
@@ -316,6 +336,10 @@ def get_forecast_monitor_status() -> dict:
         "total_runs": total_runs,
         "total_predictions": total_predictions,
         "total_evaluations": total_evaluations,
+        "total_hits": total_hits,
+        "total_misses": total_misses,
+        "total_pending": total_pending,
+        "accuracy": accuracy,
         "latest_run": latest_run,
         "recent_runs": recent_runs,
         "recent_predictions": recent_predictions,
