@@ -110,12 +110,15 @@ function lowConfidenceHint(result) {
 function PredictionDecisionIcon({ decision }) {
   return (
     <div className={`decision-icon decision-icon-${decision}`} aria-hidden="true">
-      <img
-        src={`/icons/forecast-${decision === "yes" ? "yes" : "no"}.png`}
-        alt=""
-        width="112"
-        height="112"
-      />
+      <picture>
+        <source srcSet={`/icons/forecast-${decision === "yes" ? "yes" : "no"}.webp`} type="image/webp" />
+        <img
+          src={`/icons/forecast-${decision === "yes" ? "yes" : "no"}.png`}
+          alt=""
+          width="112"
+          height="112"
+        />
+      </picture>
     </div>
   );
 }
