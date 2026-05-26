@@ -240,6 +240,7 @@ def get_forecast_monitor_status() -> dict:
                 if has_evaluations
                 else "0 AS evaluated"
             )
+            hit_select = "e.hit AS hit" if has_evaluations else "NULL AS hit"
             outcome_join = "LEFT JOIN board_outcomes o ON o.target_date = p.target_date" if has_outcomes else ""
             evaluation_join = (
                 "LEFT JOIN prediction_evaluations e ON e.prediction_id = p.id"
@@ -256,7 +257,8 @@ def get_forecast_monitor_status() -> dict:
                     p.confidence,
                     p.created_at,
                     {outcome_select},
-                    {evaluated_select}
+                    {evaluated_select},
+                    {hit_select}
                 FROM predictions p
                 {outcome_join}
                 {evaluation_join}
@@ -274,6 +276,7 @@ def get_forecast_monitor_status() -> dict:
                     "created_at": row["created_at"],
                     "outcome_status": row["outcome_status"],
                     "evaluated": bool(row["evaluated"]),
+                    "hit": bool(row["hit"]) if row["hit"] is not None else None,
                 }
                 for row in prediction_rows
             ]

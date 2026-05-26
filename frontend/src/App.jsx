@@ -120,6 +120,14 @@ function serviceStatusLabel(status) {
   return labels[status] || status;
 }
 
+function predictionEvaluationLabel(prediction) {
+  if (prediction.evaluated) {
+    return prediction.hit ? "угадал" : "ошибся";
+  }
+
+  return prediction.outcome_status || "ожидает факт";
+}
+
 function renderFormattedExplanation(text) {
   const source = String(text || "");
   const parts = [];
@@ -1214,7 +1222,7 @@ export default function App() {
                         <span>{prediction.target_date}</span>
                         <span>{probabilityPercent(prediction.probability_flight)}%</span>
                         <span>{decisionLabel(prediction.decision)}</span>
-                        <span>{prediction.evaluated ? "оценён" : prediction.outcome_status || "ожидает факт"}</span>
+                        <span>{predictionEvaluationLabel(prediction)}</span>
                       </div>
                     ))}
                   </div>

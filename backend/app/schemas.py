@@ -132,6 +132,7 @@ class ForecastMonitorPrediction(BaseModel):
     created_at: str
     outcome_status: str | None = None
     evaluated: bool = False
+    hit: bool | None = None
 
 
 class ForecastMonitorStatus(BaseModel):
