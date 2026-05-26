@@ -95,6 +95,36 @@ function confidenceLabel(confidence) {
   return labels[confidence] || confidence;
 }
 
+function renderFormattedExplanation(text) {
+  const source = String(text || "");
+  const parts = [];
+  const boldPattern = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match;
+
+  function appendText(segment) {
+    const cleanedSegment = segment.replaceAll("**", "");
+    cleanedSegment.split("\n").forEach((line, index, lines) => {
+      if (line) {
+        parts.push(line);
+      }
+      if (index < lines.length - 1) {
+        parts.push(<br key={`br-${parts.length}`} />);
+      }
+    });
+  }
+
+  while ((match = boldPattern.exec(source)) !== null) {
+    appendText(source.slice(lastIndex, match.index));
+    parts.push(<strong key={`strong-${parts.length}`}>{match[1]}</strong>);
+    lastIndex = match.index + match[0].length;
+  }
+
+  appendText(source.slice(lastIndex));
+
+  return parts;
+}
+
 function TelegramIcon() {
   return (
     <svg className="telegram-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -992,22 +1022,7 @@ export default function App() {
             Вероятность выполнения рейса — {probabilityPercent(result.probability_flight)}%.
           </p>
 
-          <div className="meta-grid">
-            <div>
-              <span>Уверенность</span>
-              <strong>{confidenceLabel(result.confidence)}</strong>
-            </div>
-            <div>
-              <span>Горизонт</span>
-              <strong>{result.horizon_days} дн.</strong>
-            </div>
-            <div>
-              <span>Модель</span>
-              <strong>{result.model_version}</strong>
-            </div>
-          </div>
-
-          <p>{result.explanation}</p>
+          <p className="result-explanation">{renderFormattedExplanation(result.explanation)}</p>
 
           {result.confidence === "low" && (
             <p className="hint">

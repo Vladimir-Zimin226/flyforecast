@@ -416,6 +416,11 @@ button:disabled {
   color: var(--color-button);
 }
 
+.result-explanation strong {
+  color: var(--color-headline);
+  font-weight: 950;
+}
+
 .meta-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
