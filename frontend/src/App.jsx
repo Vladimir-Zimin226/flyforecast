@@ -929,7 +929,7 @@ export default function App() {
                 </button>
               </>
             ) : token ? (
-              <button className="secondary" onClick={handleLogout}>
+              <button className="secondary desktop-account-action" onClick={handleLogout}>
                 Выйти
               </button>
             ) : (
@@ -1353,13 +1353,18 @@ export default function App() {
 
       {token && profile && (
         <section className="card account-card">
-          <div>
-            <div className="eyebrow">Личный кабинет</div>
-            <h2>{profile.name}</h2>
-            <p className="small">{profile.email}</p>
+          <div className="account-header">
+            <div>
+              <div className="eyebrow">Личный кабинет</div>
+              <h2>{profile.name}</h2>
+              <p className="small">{profile.email}</p>
+            </div>
+            <button className="secondary mobile-account-action" onClick={handleLogout}>
+              Выйти
+            </button>
           </div>
 
-          <div className="meta-grid">
+          <div className="meta-grid account-meta">
             <div>
               <span>Прогнозов сделано</span>
               <strong>{profile.prediction_count}</strong>
@@ -1367,10 +1372,6 @@ export default function App() {
             <div>
               <span>Отзывов отправлено</span>
               <strong>{profile.feedback_count}</strong>
-            </div>
-            <div>
-              <span>Аналитика</span>
-              <strong>{profile.analytics_consent ? "разрешена" : "не разрешена"}</strong>
             </div>
           </div>
 
