@@ -85,6 +85,17 @@ button:active:not(:disabled),
   margin-bottom: 20px;
 }
 
+.predict-card {
+  margin-bottom: 20px;
+}
+
+.predict-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: flex-start;
+}
+
 .auth-card {
   max-width: 540px;
   margin: 48px auto;
@@ -475,6 +486,7 @@ button:disabled {
   }
 
   .hero,
+  .predict-card-header,
   .result-header {
     display: block;
   }

@@ -825,49 +825,137 @@ export default function App() {
 
   return (
     <main className="page">
-      <section className="hero">
-        <div>
-          <div className="eyebrow">flyforecast.ru</div>
-          <h1>Летит на Курилы?</h1>
-          <p className="lead">
-            Оценим вероятность вылета через аэропорт Менделеево на выбранную дату.
-          </p>
+      <section className="card predict-card">
+        <div className="predict-card-header">
+          <div>
+            <div className="eyebrow">flyforecast.ru</div>
+            <h1>Когда хотите вылететь с Кунашира?</h1>
+            <p className="lead">
+              Оценим вероятность вылета через аэропорт Менделеево на выбранную дату.
+            </p>
+          </div>
+
+          <div className="hero-actions">
+            {adminToken ? (
+              <>
+                <button className="secondary" onClick={() => loadAdminUsers(adminToken)}>
+                  Обновить админку
+                </button>
+                <button className="secondary" onClick={handleAdminLogout}>
+                  Выйти из админки
+                </button>
+              </>
+            ) : token ? (
+              <button className="secondary" onClick={handleLogout}>
+                Выйти
+              </button>
+            ) : (
+              <>
+                <button
+                  className="secondary"
+                  onClick={() => {
+                    openAuthPanel("login");
+                  }}
+                >
+                  Войти
+                </button>
+                <button
+                  onClick={() => {
+                    openAuthPanel("register");
+                  }}
+                >
+                  Регистрация
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="hero-actions">
-          {adminToken ? (
-            <>
-              <button className="secondary" onClick={() => loadAdminUsers(adminToken)}>
-                Обновить админку
-              </button>
-              <button className="secondary" onClick={handleAdminLogout}>
-                Выйти из админки
-              </button>
-            </>
-          ) : token ? (
-            <button className="secondary" onClick={handleLogout}>
-              Выйти
+        <form onSubmit={handlePredict} className="predict-form">
+          <div className="date-field">
+            <span className="field-label">Дата вылета</span>
+
+            <button
+              type="button"
+              className="date-trigger"
+              onClick={() => setCalendarOpen((current) => !current)}
+              aria-expanded={calendarOpen}
+            >
+              <span>{formatDisplayDate(date)}</span>
+              <span className="date-trigger-icon">▾</span>
             </button>
-          ) : (
-            <>
-              <button
-                className="secondary"
-                onClick={() => {
-                  openAuthPanel("login");
-                }}
-              >
-                Войти
-              </button>
-              <button
-                onClick={() => {
-                  openAuthPanel("register");
-                }}
-              >
-                Регистрация
-              </button>
-            </>
-          )}
-        </div>
+
+            {calendarOpen && (
+              <div className="calendar">
+                <div className="calendar-header">
+                  <button
+                    type="button"
+                    className="calendar-nav"
+                    onClick={goToPreviousMonth}
+                    aria-label="Предыдущий месяц"
+                  >
+                    ←
+                  </button>
+
+                  <strong>{formatCalendarTitle(calendarViewDate)}</strong>
+
+                  <button
+                    type="button"
+                    className="calendar-nav"
+                    onClick={goToNextMonth}
+                    aria-label="Следующий месяц"
+                  >
+                    →
+                  </button>
+                </div>
+
+                <div className="calendar-weekdays">
+                  <span>Пн</span>
+                  <span>Вт</span>
+                  <span>Ср</span>
+                  <span>Чт</span>
+                  <span>Пт</span>
+                  <span>Сб</span>
+                  <span>Вс</span>
+                </div>
+
+                <div className="calendar-grid">
+                  {calendarDays.map((day) => {
+                    const disabled = !isDateAllowed(day.date, minDate, maxDate);
+                    const selected = isSameDay(day.date, selectedDateObject);
+
+                    return (
+                      <button
+                        key={day.iso}
+                        type="button"
+                        className={[
+                          "calendar-day",
+                          day.isCurrentMonth ? "" : "calendar-day-muted",
+                          selected ? "calendar-day-selected" : ""
+                        ].join(" ")}
+                        disabled={disabled}
+                        onClick={() => selectDate(day.date)}
+                      >
+                        {day.date.getDate()}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button disabled={isLoading}>
+            {isLoading ? "Считаем..." : "Узнать вероятность вылета"}
+          </button>
+        </form>
+
+        <p className="small">
+          Это вероятностная оценка, а не официальный статус рейса. Перед поездкой проверяйте данные у перевозчика и
+          аэропорта.
+        </p>
+
+        {error && <div className="error">{error}</div>}
       </section>
 
       {!cookieNoticeAck && (
@@ -886,6 +974,49 @@ export default function App() {
             </button>
             <button onClick={approveAnalytics}>Разрешаю аналитику</button>
           </div>
+        </section>
+      )}
+
+      {result && (
+        <section className={`card result result-${result.decision}`}>
+          <div className="result-header">
+            <div>
+              <div className="eyebrow">Дата: {result.date}</div>
+              <h2>{decisionLabel(result.decision)}</h2>
+            </div>
+
+            <div className="probability">{probabilityPercent(result.probability_flight)}%</div>
+          </div>
+
+          <p className="lead">
+            Вероятность выполнения рейса — {probabilityPercent(result.probability_flight)}%.
+          </p>
+
+          <div className="meta-grid">
+            <div>
+              <span>Уверенность</span>
+              <strong>{confidenceLabel(result.confidence)}</strong>
+            </div>
+            <div>
+              <span>Горизонт</span>
+              <strong>{result.horizon_days} дн.</strong>
+            </div>
+            <div>
+              <span>Модель</span>
+              <strong>{result.model_version}</strong>
+            </div>
+          </div>
+
+          <p>{result.explanation}</p>
+
+          {result.confidence === "low" && (
+            <p className="hint">
+              Совет: проверьте соседние даты — для дальнего горизонта полезнее выбрать благоприятное окно, а не одну
+              точную дату.
+            </p>
+          )}
+
+          <p className="small">{result.disclaimer}</p>
         </section>
       )}
 
@@ -1233,150 +1364,6 @@ export default function App() {
             )}
           </section>
         </div>
-      )}
-
-      <section className="card">
-        <div className="section-heading">
-          <div>
-            <h2>Когда хотите вылететь с Кунашира?</h2>
-            <p className="small">
-              {adminToken
-                ? "Администратор: прогнозы без лимита."
-                : token
-                  ? `Прогнозов в личном кабинете: ${effectivePredictionCount}.`
-                  : `Бесплатных прогнозов без регистрации: ${Math.min(predictionCount, FREE_ANON_PREDICTION_LIMIT)} из ${FREE_ANON_PREDICTION_LIMIT}.`}
-            </p>
-          </div>
-        </div>
-
-        <form onSubmit={handlePredict} className="predict-form">
-          <div className="date-field">
-            <span className="field-label">Дата вылета</span>
-
-            <button
-              type="button"
-              className="date-trigger"
-              onClick={() => setCalendarOpen((current) => !current)}
-              aria-expanded={calendarOpen}
-            >
-              <span>{formatDisplayDate(date)}</span>
-              <span className="date-trigger-icon">▾</span>
-            </button>
-
-            {calendarOpen && (
-              <div className="calendar">
-                <div className="calendar-header">
-                  <button
-                    type="button"
-                    className="calendar-nav"
-                    onClick={goToPreviousMonth}
-                    aria-label="Предыдущий месяц"
-                  >
-                    ←
-                  </button>
-
-                  <strong>{formatCalendarTitle(calendarViewDate)}</strong>
-
-                  <button
-                    type="button"
-                    className="calendar-nav"
-                    onClick={goToNextMonth}
-                    aria-label="Следующий месяц"
-                  >
-                    →
-                  </button>
-                </div>
-
-                <div className="calendar-weekdays">
-                  <span>Пн</span>
-                  <span>Вт</span>
-                  <span>Ср</span>
-                  <span>Чт</span>
-                  <span>Пт</span>
-                  <span>Сб</span>
-                  <span>Вс</span>
-                </div>
-
-                <div className="calendar-grid">
-                  {calendarDays.map((day) => {
-                    const disabled = !isDateAllowed(day.date, minDate, maxDate);
-                    const selected = isSameDay(day.date, selectedDateObject);
-
-                    return (
-                      <button
-                        key={day.iso}
-                        type="button"
-                        className={[
-                          "calendar-day",
-                          day.isCurrentMonth ? "" : "calendar-day-muted",
-                          selected ? "calendar-day-selected" : ""
-                        ].join(" ")}
-                        disabled={disabled}
-                        onClick={() => selectDate(day.date)}
-                      >
-                        {day.date.getDate()}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <button disabled={isLoading}>
-            {isLoading ? "Считаем..." : "Узнать вероятность вылета"}
-          </button>
-        </form>
-
-        <p className="small">
-          Это вероятностная оценка, а не официальный статус рейса. Перед поездкой проверяйте данные у перевозчика и
-          аэропорта.
-        </p>
-
-        {error && <div className="error">{error}</div>}
-      </section>
-
-      {result && (
-        <section className={`card result result-${result.decision}`}>
-          <div className="result-header">
-            <div>
-              <div className="eyebrow">Дата: {result.date}</div>
-              <h2>{decisionLabel(result.decision)}</h2>
-            </div>
-
-            <div className="probability">{probabilityPercent(result.probability_flight)}%</div>
-          </div>
-
-          <p className="lead">
-            Вероятность выполнения рейса — {probabilityPercent(result.probability_flight)}%.
-          </p>
-
-          <div className="meta-grid">
-            <div>
-              <span>Уверенность</span>
-              <strong>{confidenceLabel(result.confidence)}</strong>
-            </div>
-            <div>
-              <span>Горизонт</span>
-              <strong>{result.horizon_days} дн.</strong>
-            </div>
-            <div>
-              <span>Модель</span>
-              <strong>{result.model_version}</strong>
-            </div>
-          </div>
-
-          <p>{result.explanation}</p>
-
-          {result.confidence === "low" && (
-            <p className="hint">
-              Совет: проверьте соседние даты — для дальнего горизонта полезнее выбрать благоприятное окно, а не одну
-              точную дату.
-            </p>
-          )}
-
-          <p className="small">{result.disclaimer}</p>
-        </section>
       )}
 
       {predictionCount >= 2 && !token && (
