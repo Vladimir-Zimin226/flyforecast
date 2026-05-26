@@ -475,8 +475,8 @@ button:disabled {
 
 .decision-icon svg {
   position: relative;
-  width: 72px;
-  height: 72px;
+  width: 82px;
+  height: 82px;
 }
 
 .decision-icon-yes {
@@ -498,12 +498,28 @@ button:disabled {
   box-shadow: 0 0 0 8px rgba(250, 204, 21, 0.18);
 }
 
+.decision-plane-shadow {
+  fill: rgba(1, 1, 1, 0.22);
+  transform: translate(2px, 3px);
+}
+
 .decision-plane {
   fill: #fffffe;
 }
 
-.decision-wing {
+.decision-plane-wing {
   fill: #bae6fd;
+}
+
+.decision-plane-tail {
+  fill: #dbeafe;
+}
+
+.decision-plane-window {
+  fill: none;
+  stroke: #155e75;
+  stroke-linecap: round;
+  stroke-width: 3.4;
 }
 
 .decision-cross {
@@ -631,8 +647,8 @@ button:disabled {
   }
 
   .decision-icon svg {
-    width: 58px;
-    height: 58px;
+    width: 66px;
+    height: 66px;
   }
 
   .decision-sun {
