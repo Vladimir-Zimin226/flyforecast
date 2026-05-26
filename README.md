@@ -17,20 +17,22 @@
 
 > Насколько выбранная дата похожа на более или менее благоприятное окно для выполнения рейса?
 
-Для MVP пользователь:
+Текущий пользовательский сценарий:
 
-1. заходит на `flyforecast.ru`;
-2. проходит временную тестовую аутентификацию;
-3. выбирает дату от сегодня до +365 дней;
-4. нажимает «Узнать вероятность вылета»;
-5. получает ответ, вероятность, уверенность, объяснение и дисклеймер;
-6. после двух прогнозов видит CTA на Telegram-канал проекта.
+1. пользователь заходит на `flyforecast.ru`;
+2. видит уведомление о необходимых cookies/localStorage и отдельное согласие на аналитику Яндекс Метрики;
+3. выбирает дату от сегодня до +365 дней и получает прогноз;
+4. без регистрации может сделать до 5 бесплатных прогнозов;
+5. после 5-го прогноза сервис предлагает создать личный кабинет для дальнейшей бесплатной работы;
+6. при регистрации пользователь указывает имя, email и пароль, а также даёт согласие на обработку персональных данных;
+7. в личном кабинете пользователь видит статистику своих прогнозов и может оставить обратную связь;
+8. администратор входит через обычную форму входа и видит пользователей, их прогнозы, согласия и отзывы в закрытой админской зоне.
 
 ---
 
 ## Текущий статус
 
-Сделан первый работающий vertical slice:
+Сделан работающий vertical slice публичного сервиса:
 
 - frontend на React/Vite;
 - backend на FastAPI;
@@ -39,12 +41,17 @@
 - доступ через `https://flyforecast.ru`;
 - HTTPS через Let's Encrypt / Certbot;
 - reverse proxy через nginx;
-- временная тестовая аутентификация;
+- регистрация и вход по email/паролю;
+- личный кабинет пользователя со статистикой прогнозов и формой обратной связи;
+- закрытая админка без публичной кнопки входа;
+- админские учётные данные через `.env`;
+- хранение пользователей, согласий, прогнозных событий и отзывов в Postgres;
+- ограничение: 5 бесплатных прогнозов без регистрации, без лимита для администратора;
 - endpoint прогноза `/predict?date=YYYY-MM-DD`;
 - Open-Meteo forecast API;
 - GigaChat API для пользовательского объяснения;
 - baseline-расчёт вероятности `mvp-baseline-001`;
-- логирование прогнозов в JSONL;
+- legacy JSONL-логирование прогнозов для совместимости с monitor/pipeline;
 - hourly collector статусов рейсов по табло аэропорта;
 - forecast monitor для ledger прогнозов, фактов и метрик качества;
 - рабочий v3 dataset с ручной проверкой и board evidence.
@@ -77,7 +84,17 @@ docs/data_experiments.md
 FLYFORECAST_DATASET_PATH=/app/data/processed/dataset_daily_flights_v3.csv
 ```
 
-Важно: данные в `data/` считаются рабочими/ценными и не обязаны коммититься в публичный репозиторий.
+Пользовательские и продуктовые данные хранятся в Postgres:
+
+- зарегистрированные пользователи;
+- хеши паролей;
+- согласия на обработку персональных данных;
+- согласия на аналитику;
+- события прогнозов зарегистрированных пользователей;
+- счётчики прогнозов;
+- обратная связь.
+
+Важно: данные в `data/` и production-база считаются рабочими/ценными и не обязаны коммититься в публичный репозиторий.
 
 Описание текущей прогнозной логики закреплено отдельно:
 
@@ -121,13 +138,17 @@ backend/
         ├── weather.py
         ├── history.py
         ├── predictor.py
+        ├── users.py
         └── llm.py
 ```
 
 Основные части:
 
-- `backend/app/main.py` — FastAPI endpoints: `/health`, `/auth/login`, `/predict`.
+- `backend/app/main.py` — FastAPI endpoints: `/health`, `/auth/register`, `/auth/login`, `/me`, `/feedback`, `/consents`, `/admin/users`, `/predict`.
 - `backend/app/config.py` — env-настройки проекта.
+- `backend/app/auth.py` — JWT и проверка пользователя/администратора.
+- `backend/app/schemas.py` — request/response-схемы, включая email-валидацию и лимит отзыва.
+- `backend/app/services/users.py` — Postgres-хранилище пользователей, согласий, прогнозных событий и отзывов.
 - `backend/app/services/weather.py` — Open-Meteo forecast API.
 - `backend/app/services/history.py` — historical snapshot из dataset.
 - `backend/app/services/predictor.py` — MVP baseline probability/decision/confidence.
@@ -152,8 +173,8 @@ frontend/
 
 Основные части:
 
-- `frontend/src/App.jsx` — логин, календарь, запрос прогноза, карточка результата, CTA.
-- `frontend/src/styles.css` — тёмная палитра, layout, календарь, mobile adaptation.
+- `frontend/src/App.jsx` — прогнозный экран, cookie/analytics consent, регистрация, вход, личный кабинет, админка, политика обработки данных.
+- `frontend/src/styles.css` — визуальная система, responsive layout, формы, модальные окна, cookie-баннер.
 - `frontend/nginx.conf` — SPA fallback для production frontend.
 
 ## Pipelines
@@ -177,7 +198,8 @@ docs/
 ├── dataset_preparation.md
 ├── data_experiments.md
 ├── product_benchmarking.md
-└── prototype.md
+├── prototype.md
+└── privacy-policy/
 ```
 
 - `docs/baseline_model.md` — как работает текущий `mvp-baseline-001`.
@@ -186,6 +208,7 @@ docs/
 - `docs/data_experiments.md` — история источников, датасетов, сборщиков и ML-data экспериментов.
 - `docs/product_benchmarking.md` — продуктовый benchmarking.
 - `docs/prototype.md` — описание продуктового прототипа.
+- `docs/privacy-policy/` — материалы и образцы для политики обработки персональных данных.
 
 ---
 
@@ -210,15 +233,20 @@ cp .env.example .env
 APP_ENV=development
 BACKEND_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
 
-TEST_USERNAME=demo
-TEST_PASSWORD=demo
 JWT_SECRET=change-me
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=change-me-strong-admin-password
 
 GIGA_API_KEY=your_gigachat_authorization_key
 GIGA_MODEL=GigaChat-2
 GIGA_SCOPE=GIGACHAT_API_PERS
 GIGA_VERIFY_SSL_CERTS=true
 GIGA_TIMEOUT=30
+
+POSTGRES_DB=flyforecast
+POSTGRES_USER=flyforecast
+POSTGRES_PASSWORD=change-me-postgres-password
+DATABASE_URL=postgresql://flyforecast:change-me-postgres-password@db:5432/flyforecast
 
 FLYFORECAST_DATASET_PATH=/app/data/processed/dataset_daily_flights_v3.csv
 PREDICTION_LOG_PATH=/app/data/interim/prediction_logs.jsonl
@@ -255,6 +283,7 @@ Dev-адреса:
 ```text
 Frontend: http://localhost:5173
 Backend:  http://localhost:8000
+Postgres: localhost:5432
 Health:   http://localhost:8000/health
 ```
 
@@ -274,6 +303,26 @@ GET /health
 {"status":"ok"}
 ```
 
+### Register
+
+```http
+POST /auth/register
+```
+
+Через production nginx:
+
+```http
+POST /api/auth/register
+```
+
+Пример:
+
+```bash
+curl -X POST https://flyforecast.ru/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Иван","email":"ivan@example.com","password":"strong-password","personal_data_consent":true,"analytics_consent":false,"initial_prediction_count":5}'
+```
+
 ### Login
 
 ```http
@@ -291,8 +340,66 @@ POST /api/auth/login
 ```bash
 curl -X POST https://flyforecast.ru/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"demo","password":"your-password"}'
+  -d '{"email":"ivan@example.com","password":"strong-password"}'
 ```
+
+### Profile
+
+```http
+GET /me
+```
+
+Через production nginx:
+
+```http
+GET /api/me
+```
+
+Возвращает имя, email, количество прогнозов, количество отзывов, дату регистрации и статусы согласий.
+
+### Feedback
+
+```http
+POST /feedback
+```
+
+Через production nginx:
+
+```http
+POST /api/feedback
+```
+
+Отзыв доступен зарегистрированному пользователю и ограничен 500 символами.
+
+### Consents
+
+```http
+POST /consents
+```
+
+Через production nginx:
+
+```http
+POST /api/consents
+```
+
+Используется для фиксации событий `necessary_cookies_ack` и `analytics_consent`.
+
+### Admin Users
+
+```http
+GET /admin/users
+PATCH /admin/users/{email}
+DELETE /admin/users/{email}
+```
+
+Через production nginx:
+
+```http
+GET /api/admin/users
+```
+
+Доступно только администратору. Админ входит через обычную форму входа, используя `ADMIN_EMAIL` и `ADMIN_PASSWORD` из `.env`.
 
 ### Predict
 
@@ -323,9 +430,26 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 - `confidence`;
 - `horizon_days`;
 - `explanation`;
+- `weather`;
+- `history`;
 - `model_version`;
 - `data_version`;
 - `disclaimer`.
+
+---
+
+## Приватность и юридическая часть
+
+Сервис обрабатывает персональные данные зарегистрированных пользователей: имя, email, пароль в хешированном виде, статистику прогнозов, согласия и обратную связь.
+
+Ключевые правила продукта:
+
+- регистрация невозможна без согласия на обработку персональных данных;
+- email проходит обязательную серверную валидацию;
+- необходимые cookies/localStorage используются для работы интерфейса, входа и счётчика бесплатных прогнозов;
+- Яндекс Метрика должна подключаться только после отдельного согласия пользователя;
+- трансграничная передача персональных данных для текущей инфраструктуры не осуществляется и не планируется;
+- отзывы пользователей могут использоваться для продвижения сервиса в порядке, указанном в политике.
 
 ---
 
@@ -336,8 +460,9 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 3. Сравнить seasonal baseline и Logistic Regression.
 4. Считать Brier Score и calibration curve.
 5. Улучшить backend confidence/threshold rules после первых метрик forecast monitor.
-6. Добавить tests для `/health`, `/auth/login`, `/predict`.
-7. Улучшить frontend: «Как это работает», сравнение соседних дат, прозрачные ограничения.
+6. Добавить tests для `/health`, `/auth/register`, `/auth/login`, `/me`, `/predict`.
+7. Развить продуктовую аналитику по зарегистрированным пользователям: retention, повторные прогнозы, конверсия после 5 бесплатных прогнозов, ценность отзывов.
+8. Улучшить frontend: сравнение соседних дат, сохранение дат, прозрачные ограничения.
 
 ---
 
