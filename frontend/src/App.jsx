@@ -107,18 +107,287 @@ function lowConfidenceHint(result) {
   return "Для этой даты мало надежных похожих случаев в истории, поэтому полезно сравнить соседние даты.";
 }
 
+function ForecastYesIcon() {
+  return (
+    <svg className="forecast-animated-icon" viewBox="0 0 160 160" aria-hidden="true" focusable="false">
+      <style>
+        {`
+          .yes-sun-halo,
+          .yes-sun-core {
+            transform-origin: 112px 48px;
+            animation: yesSunPulse 5s ease-in-out infinite;
+          }
+
+          .yes-cloud-a { animation: yesCloudA 18s ease-in-out infinite; }
+          .yes-cloud-b { animation: yesCloudB 22s ease-in-out infinite; }
+          .yes-cloud-c { animation: yesCloudC 20s ease-in-out infinite; }
+
+          .yes-plane-wrap {
+            transform-origin: 80px 88px;
+            animation: yesPlaneFloat 4.6s ease-in-out infinite;
+          }
+
+          .yes-trail { animation: yesTrailFade 4.6s ease-in-out infinite; }
+
+          @keyframes yesSunPulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.06); opacity: 0.92; }
+          }
+
+          @keyframes yesCloudA {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(5px); }
+          }
+
+          @keyframes yesCloudB {
+            0%, 100% { transform: translateX(0); }
+            50% { transform: translateX(-5px); }
+          }
+
+          @keyframes yesCloudC {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(4px, -1px); }
+          }
+
+          @keyframes yesPlaneFloat {
+            0%, 100% { transform: translate(0, 0) rotate(0deg); }
+            50% { transform: translate(4px, -5px) rotate(-1.4deg); }
+          }
+
+          @keyframes yesTrailFade {
+            0%, 100% { opacity: 0.22; }
+            50% { opacity: 0.42; }
+          }
+        `}
+      </style>
+
+      <defs>
+        <linearGradient id="yesSunGrad" x1="112" y1="26" x2="112" y2="70" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#fff7b8" />
+          <stop offset="1" stopColor="#ffd865" />
+        </linearGradient>
+        <linearGradient id="yesCloudGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#eaf8ff" />
+        </linearGradient>
+        <linearGradient id="yesAccentGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#7fe7e7" />
+          <stop offset="1" stopColor="#5bb9f7" />
+        </linearGradient>
+        <filter id="yesSoftShadow" x="-30%" y="-30%" width="160%" height="160%">
+          <feDropShadow dx="0" dy="2" stdDeviation="2.4" floodColor="#78c7dd" floodOpacity="0.24" />
+        </filter>
+      </defs>
+
+      <circle className="yes-sun-halo" cx="112" cy="48" r="30" fill="#fff3b1" opacity="0.36" />
+      <circle className="yes-sun-core" cx="112" cy="48" r="22" fill="url(#yesSunGrad)" />
+
+      <g className="yes-cloud-a" fill="url(#yesCloudGrad)" opacity="0.95">
+        <ellipse cx="31" cy="52" rx="10" ry="7" />
+        <ellipse cx="43" cy="48" rx="13" ry="9" />
+        <ellipse cx="56" cy="53" rx="11" ry="8" />
+        <ellipse cx="44" cy="57" rx="24" ry="8" />
+      </g>
+
+      <g className="yes-cloud-b" fill="url(#yesCloudGrad)" opacity="0.88">
+        <ellipse cx="105" cy="94" rx="8" ry="6" />
+        <ellipse cx="116" cy="90" rx="11" ry="8" />
+        <ellipse cx="129" cy="94" rx="10" ry="7" />
+        <ellipse cx="117" cy="98" rx="20" ry="7" />
+      </g>
+
+      <g className="yes-cloud-c" fill="url(#yesCloudGrad)" opacity="0.88">
+        <ellipse cx="37" cy="113" rx="9" ry="6" />
+        <ellipse cx="48" cy="109" rx="12" ry="8" />
+        <ellipse cx="62" cy="114" rx="10" ry="7" />
+        <ellipse cx="49" cy="117" rx="21" ry="7" />
+      </g>
+
+      <path
+        className="yes-trail"
+        d="M45 111 C56 106 64 100 72 91"
+        stroke="url(#yesAccentGrad)"
+        strokeWidth="4"
+        strokeLinecap="round"
+      />
+      <path
+        className="yes-trail"
+        d="M41 117 C52 112 60 106 68 98"
+        stroke="#ddf8ff"
+        strokeWidth="2.3"
+        strokeLinecap="round"
+        opacity="0.42"
+      />
+
+      <g className="yes-plane-wrap" filter="url(#yesSoftShadow)">
+        <g transform="translate(54 96) rotate(-28)">
+          <path
+            d="M5 -6.5 C2.2 -6.5 0 -3.8 0 0 C0 3.8 2.2 6.5 5 6.5 L38 6.5 C44 6.5 49.5 4.3 54 0 C49.5 -4.3 44 -6.5 38 -6.5 Z"
+            fill="#ffffff"
+          />
+          <path d="M18 -1.8 L7 -16 C6.6 -16.6 7.1 -17.3 7.8 -17.1 L26 -6.2 Z" fill="#ffffff" />
+          <path d="M21 1.8 L8 13.5 C7.4 14.1 7.9 15 8.8 14.8 L29 5.5 Z" fill="#ffffff" />
+          <path
+            d="M10 -1.2 L3.4 -10.6 C3 -11.1 3.5 -11.8 4.2 -11.6 L13.2 -4.3 Z"
+            fill="url(#yesAccentGrad)"
+          />
+          <path
+            d="M10.6 1.2 L4.2 9.8 C3.8 10.4 4.3 11.1 5.1 10.9 L13.8 4.3 Z"
+            fill="url(#yesAccentGrad)"
+            opacity="0.92"
+          />
+          <path
+            d="M6 1.2 L35.5 1.2 C40 1.2 43.7 0.8 47 0 C43 2.1 39.2 3.1 35.2 3.1 L6 3.1 C4.6 3.1 3.5 2.5 2.8 1.6 C3.8 1.3 4.8 1.2 6 1.2 Z"
+            fill="#ddf8ff"
+            opacity="0.85"
+          />
+          <path d="M35.2 -3.8 L41 -3.8 C42.2 -3.8 43 -3.2 43.6 -2.2 L35.2 -1.4 Z" fill="#d9f3fb" />
+        </g>
+      </g>
+    </svg>
+  );
+}
+
+function ForecastNoIcon() {
+  return (
+    <svg className="forecast-animated-icon" viewBox="0 0 160 160" aria-hidden="true" focusable="false">
+      <style>
+        {`
+          .no-cloud-back { animation: noCloudBack 11s ease-in-out infinite alternate; }
+          .no-cloud-front { animation: noCloudFront 8s ease-in-out infinite alternate; }
+          .no-plane { transform-origin: 80px 83px; animation: noPlaneRock 4.8s ease-in-out infinite; }
+          .no-rain-slow { animation: noRainFall 2.6s linear infinite; }
+          .no-rain-mid { animation: noRainFall 2s linear infinite; }
+          .no-rain-fast { animation: noRainFall 1.6s linear infinite; }
+          .no-delay-1 { animation-delay: -0.5s; }
+          .no-delay-2 { animation-delay: -1s; }
+          .no-delay-3 { animation-delay: -1.4s; }
+          .no-delay-4 { animation-delay: -0.9s; }
+          .no-delay-5 { animation-delay: -1.8s; }
+          .no-ban { transform-origin: 80px 80px; animation: noBanPulse 2.8s ease-in-out infinite; }
+
+          @keyframes noCloudBack {
+            0% { transform: translateX(-2px); }
+            100% { transform: translateX(4px); }
+          }
+
+          @keyframes noCloudFront {
+            0% { transform: translateX(3px); }
+            100% { transform: translateX(-4px); }
+          }
+
+          @keyframes noPlaneRock {
+            0%, 100% { transform: rotate(-1.2deg) translateY(0); }
+            50% { transform: rotate(1.2deg) translateY(1px); }
+          }
+
+          @keyframes noRainFall {
+            0% { transform: translateY(-2px); opacity: 0.15; }
+            20% { opacity: 0.65; }
+            100% { transform: translateY(9px); opacity: 0.15; }
+          }
+
+          @keyframes noBanPulse {
+            0%, 100% { transform: scale(1); opacity: 0.95; }
+            50% { transform: scale(1.03); opacity: 1; }
+          }
+        `}
+      </style>
+
+      <defs>
+        <linearGradient id="noCloudGradBack" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#cfd8e5" />
+          <stop offset="1" stopColor="#aab9cc" />
+        </linearGradient>
+        <linearGradient id="noCloudGradFront" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#becadb" />
+          <stop offset="1" stopColor="#93a6bf" />
+        </linearGradient>
+        <linearGradient id="noPlaneGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#ffffff" />
+          <stop offset="1" stopColor="#e9eef5" />
+        </linearGradient>
+        <linearGradient id="noBanGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="#ff5a5f" />
+          <stop offset="1" stopColor="#df2e3a" />
+        </linearGradient>
+        <filter id="noSoftShadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#1f3550" floodOpacity="0.16" />
+        </filter>
+      </defs>
+
+      <g className="no-cloud-back" filter="url(#noSoftShadow)" opacity="0.9" fill="url(#noCloudGradBack)">
+        <ellipse cx="48" cy="56" rx="18" ry="12" />
+        <ellipse cx="67" cy="52" rx="20" ry="14" />
+        <ellipse cx="87" cy="57" rx="18" ry="12" />
+        <ellipse cx="66" cy="62" rx="34" ry="13" />
+        <ellipse cx="116" cy="47" rx="26" ry="10" opacity="0.95" />
+      </g>
+
+      <g stroke="#7e93ad" strokeWidth="2.2" strokeLinecap="round" opacity="0.72">
+        <line className="no-rain-slow" x1="40" y1="77" x2="38" y2="86" />
+        <line className="no-rain-mid no-delay-1" x1="53" y1="82" x2="51" y2="91" />
+        <line className="no-rain-fast no-delay-2" x1="66" y1="79" x2="64" y2="88" />
+        <line className="no-rain-mid no-delay-3" x1="79" y1="85" x2="77" y2="94" />
+        <line className="no-rain-slow no-delay-4" x1="92" y1="80" x2="90" y2="89" />
+        <line className="no-rain-fast no-delay-5" x1="106" y1="84" x2="104" y2="93" />
+      </g>
+
+      <g className="no-plane" filter="url(#noSoftShadow)">
+        <path
+          d="M38 88 C42 83, 49 80, 59 79 L99 76 C111 75, 121 79, 128 84 C130 85.5, 130 88.5, 128 90 C121 95.5, 111 99, 99 98 L59 95 C49 94, 42 91, 38 88 Z"
+          fill="url(#noPlaneGrad)"
+        />
+        <path d="M112 79 C117 79.5, 121 81.2, 124.2 84 L112 84.5 Z" fill="#d7e3f0" opacity="0.95" />
+        <path
+          d="M52 80 L40 68 C38.5 66.5, 39.7 64.2, 41.8 64.5 L53 66.2 C55.2 66.6, 56.4 68.7, 55.5 70.6 Z"
+          fill="url(#noPlaneGrad)"
+        />
+        <path
+          d="M73 83 L55 61 C53.5 59.2, 54.8 56.5, 57.1 56.8 L85 61.4 C87.2 61.8, 88.4 64.2, 87.1 66.1 L79.5 77.2 Z"
+          fill="#f4f8fc"
+        />
+        <path
+          d="M70 91 L55 106 C53.4 107.6, 54.5 110.2, 56.8 110 L76 107.9 C78.3 107.6, 79.9 105.6, 79.7 103.3 L78.9 94.4 Z"
+          fill="#eef4fa"
+        />
+        <rect x="88" y="90" width="12" height="4.8" rx="2.4" fill="#d6e0eb" />
+        <rect x="58" y="89" width="44" height="2.8" rx="1.4" fill="#d9e4ef" opacity="0.85" />
+      </g>
+
+      <g className="no-cloud-front" filter="url(#noSoftShadow)" fill="url(#noCloudGradFront)">
+        <ellipse cx="45" cy="98" rx="24" ry="8" opacity="0.92" />
+        <ellipse cx="118" cy="103" rx="22" ry="7" opacity="0.88" />
+      </g>
+
+      <g className="no-ban">
+        <circle
+          cx="80"
+          cy="80"
+          r="48"
+          fill="none"
+          stroke="url(#noBanGrad)"
+          strokeWidth="9"
+          strokeLinecap="round"
+          filter="url(#noSoftShadow)"
+        />
+        <path
+          d="M48 112 L112 48"
+          fill="none"
+          stroke="url(#noBanGrad)"
+          strokeWidth="10"
+          strokeLinecap="round"
+          filter="url(#noSoftShadow)"
+        />
+      </g>
+    </svg>
+  );
+}
+
 function PredictionDecisionIcon({ decision }) {
   return (
     <div className={`decision-icon decision-icon-${decision}`} aria-hidden="true">
-      <picture>
-        <source srcSet={`/icons/forecast-${decision === "yes" ? "yes" : "no"}.webp`} type="image/webp" />
-        <img
-          src={`/icons/forecast-${decision === "yes" ? "yes" : "no"}.png`}
-          alt=""
-          width="112"
-          height="112"
-        />
-      </picture>
+      {decision === "yes" ? <ForecastYesIcon /> : <ForecastNoIcon />}
     </div>
   );
 }

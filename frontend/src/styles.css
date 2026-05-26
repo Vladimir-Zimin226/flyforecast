@@ -491,17 +491,10 @@ button:disabled {
   border-color: rgba(255, 122, 122, 0.52);
 }
 
-.decision-icon picture {
+.forecast-animated-icon {
   display: block;
   width: 100%;
   height: 100%;
-}
-
-.decision-icon img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
   filter: drop-shadow(0 16px 18px rgba(1, 1, 1, 0.24));
 }
 
