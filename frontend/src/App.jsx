@@ -85,8 +85,26 @@ function decisionLabel(decision) {
   return decision === "yes" ? "Да" : "Нет";
 }
 
-function decisionToneLabel(decision) {
-  return decision === "yes" ? "Высокий шанс вылета" : "Риск отмены выше";
+function decisionToneLabel(result) {
+  const probability = probabilityPercent(result.probability_flight);
+
+  if (result.confidence === "low") {
+    return result.decision === "yes" ? "Скорее благоприятное окно" : "Ориентировочный риск отмены";
+  }
+
+  if (result.decision === "yes") {
+    return probability >= 60 ? "Высокий шанс вылета" : "Скорее да";
+  }
+
+  return probability <= 45 ? "Риск отмены выше" : "Пограничный прогноз";
+}
+
+function lowConfidenceHint(result) {
+  if (result.horizon_days > 46) {
+    return "Дата далеко в будущем: точного прогноза погоды для нее пока нет, поэтому оценка опирается в основном на историю и сезонность. Сравните соседние даты.";
+  }
+
+  return "Для этой даты мало надежных похожих случаев в истории, поэтому полезно сравнить соседние даты.";
 }
 
 function PredictionDecisionIcon({ decision }) {
@@ -1096,7 +1114,7 @@ export default function App() {
               <div>
                 <div className="eyebrow">Дата: {result.date}</div>
                 <h2>{decisionLabel(result.decision)}</h2>
-                <span>{decisionToneLabel(result.decision)}</span>
+                <span>{decisionToneLabel(result)}</span>
               </div>
             </div>
 
@@ -1114,8 +1132,7 @@ export default function App() {
 
           {result.confidence === "low" && (
             <p className="hint">
-              Совет: проверьте соседние даты — для дальнего горизонта полезнее выбрать благоприятное окно, а не одну
-              точную дату.
+              {lowConfidenceHint(result)}
             </p>
           )}
 
