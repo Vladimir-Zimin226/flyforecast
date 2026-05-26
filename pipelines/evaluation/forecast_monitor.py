@@ -388,7 +388,10 @@ def upsert_outcomes(conn: sqlite3.Connection, outcomes: list[dict]) -> int:
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(target_date) DO UPDATE SET
-                status = excluded.status,
+                status = CASE
+                    WHEN board_outcomes.is_final = 1 THEN board_outcomes.status
+                    ELSE excluded.status
+                END,
                 is_final = CASE
                     WHEN board_outcomes.is_final = 1 THEN 1
                     ELSE excluded.is_final
@@ -397,14 +400,38 @@ def upsert_outcomes(conn: sqlite3.Connection, outcomes: list[dict]) -> int:
                     WHEN board_outcomes.is_final = 1 AND board_outcomes.finalized_at != '' THEN board_outcomes.finalized_at
                     ELSE excluded.finalized_at
                 END,
-                first_observed_at = excluded.first_observed_at,
-                last_observed_at = excluded.last_observed_at,
-                evidence_count = excluded.evidence_count,
-                evidence_statuses = excluded.evidence_statuses,
-                source_types = excluded.source_types,
-                flight_numbers = excluded.flight_numbers,
-                reason_class = excluded.reason_class,
-                raw_evidence_sample = excluded.raw_evidence_sample
+                first_observed_at = CASE
+                    WHEN board_outcomes.is_final = 1 THEN board_outcomes.first_observed_at
+                    ELSE excluded.first_observed_at
+                END,
+                last_observed_at = CASE
+                    WHEN board_outcomes.is_final = 1 THEN board_outcomes.last_observed_at
+                    ELSE excluded.last_observed_at
+                END,
+                evidence_count = CASE
+                    WHEN board_outcomes.is_final = 1 THEN board_outcomes.evidence_count
+                    ELSE excluded.evidence_count
+                END,
+                evidence_statuses = CASE
+                    WHEN board_outcomes.is_final = 1 THEN board_outcomes.evidence_statuses
+                    ELSE excluded.evidence_statuses
+                END,
+                source_types = CASE
+                    WHEN board_outcomes.is_final = 1 THEN board_outcomes.source_types
+                    ELSE excluded.source_types
+                END,
+                flight_numbers = CASE
+                    WHEN board_outcomes.is_final = 1 THEN board_outcomes.flight_numbers
+                    ELSE excluded.flight_numbers
+                END,
+                reason_class = CASE
+                    WHEN board_outcomes.is_final = 1 THEN board_outcomes.reason_class
+                    ELSE excluded.reason_class
+                END,
+                raw_evidence_sample = CASE
+                    WHEN board_outcomes.is_final = 1 THEN board_outcomes.raw_evidence_sample
+                    ELSE excluded.raw_evidence_sample
+                END
             """,
             (
                 outcome["target_date"],
