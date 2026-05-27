@@ -22,6 +22,7 @@ HOURLY_FIELDS = [
 ]
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_MAX_HORIZON_DAYS = 15
 OPEN_METEO_RETRIES = 2
 OPEN_METEO_RETRY_DELAY_SECONDS = 0.8
 
@@ -46,7 +47,7 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
     if horizon_days < 0:
         return _unavailable_weather("Past dates are not supported by /predict in MVP.")
 
-    if horizon_days > 15:
+    if horizon_days > OPEN_METEO_MAX_HORIZON_DAYS:
         return _unavailable_weather("Open-Meteo forecast is not available for this long horizon in MVP.")
 
     params = {

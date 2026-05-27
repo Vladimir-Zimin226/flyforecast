@@ -35,7 +35,7 @@ from app.services.predictor import (
     get_horizon_days,
     make_decision,
 )
-from app.services.weather import fetch_weather_for_date
+from app.services.weather import OPEN_METEO_MAX_HORIZON_DAYS, fetch_weather_for_date
 from app.services.users import (
     authenticate_user,
     delete_admin_user,
@@ -197,7 +197,7 @@ async def predict(
     )
 
     today = datetime.now().date()
-    max_date = today + timedelta(days=15)
+    max_date = today + timedelta(days=365)
 
     if target_date < today:
         logger.warning(
@@ -215,7 +215,7 @@ async def predict(
             target_date.isoformat(),
             max_date.isoformat(),
         )
-        raise HTTPException(status_code=400, detail="Погодный прогноз доступен только на ближайшие 15 дней.")
+        raise HTTPException(status_code=400, detail="Date must be within 365 days from today")
 
     horizon_days = get_horizon_days(target_date)
 
@@ -249,7 +249,7 @@ async def predict(
         weather.wind_gusts_10m,
     )
 
-    if not weather.available:
+    if horizon_days <= OPEN_METEO_MAX_HORIZON_DAYS and not weather.available:
         logger.warning(
             "predict_blocked_weather_unavailable request_id=%s target_date=%s reason=%s",
             request_id,

@@ -130,6 +130,20 @@ function formatDateTime(value) {
   return parsed.toLocaleString("ru-RU");
 }
 
+function formatPredictionDateTitle(value) {
+  const parsed = parseIsoDate(value);
+
+  if (Number.isNaN(parsed.getTime())) {
+    return `Предсказание вылета на ${value}`;
+  }
+
+  return `Предсказание вылета на ${parsed.toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric"
+  })}`;
+}
+
 function confidenceLabel(confidence) {
   const labels = {
     low: "низкая",
@@ -470,7 +484,7 @@ export default function App() {
   );
 
   const minDate = useMemo(() => todayIso(), []);
-  const maxDate = useMemo(() => addDaysIso(15), []);
+  const maxDate = useMemo(() => addDaysIso(365), []);
   const calendarDays = useMemo(() => getCalendarDays(calendarViewDate), [calendarViewDate]);
   const selectedDateObject = useMemo(() => parseIsoDate(date), [date]);
   const activeToken = token || adminToken;
@@ -1104,7 +1118,7 @@ export default function App() {
             <div className="result-decision">
               <PredictionDecisionIcon decision={result.decision} />
               <div>
-                <div className="eyebrow">Дата: {result.date}</div>
+                <div className="result-date-label">{formatPredictionDateTitle(result.date)}</div>
                 <h2>{decisionLabel(result.decision)}</h2>
                 <span>{decisionToneLabel(result)}</span>
               </div>

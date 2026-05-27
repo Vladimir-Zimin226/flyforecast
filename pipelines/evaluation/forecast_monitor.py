@@ -25,14 +25,14 @@ from app.services.predictor import (
     get_confidence,
     make_decision,
 )
-from app.services.weather import fetch_weather_for_date
+from app.services.weather import OPEN_METEO_MAX_HORIZON_DAYS, fetch_weather_for_date
 
 
 DEFAULT_DB_PATH = "data/interim/evaluation/forecast_monitor.sqlite"
 DEFAULT_EXPORT_DIR = "data/interim/evaluation/exports"
 DEFAULT_BOARD_STATUS_PATH = "data/raw/flight_status/kunashir_flight_status_hourly.csv"
-DEFAULT_HORIZONS = ",".join(str(value) for value in range(0, 16))
-DEFAULT_EXTRA_HORIZONS = ""
+DEFAULT_HORIZONS = ",".join(str(value) for value in range(0, 46))
+DEFAULT_EXTRA_HORIZONS = "60,90"
 
 COMPLETED_BOARD_STATUSES = {"departed", "arrived", "in_flight"}
 UNKNOWN_OUTCOME_STATUSES = {"unknown", "planned_only", "needs_review"}
@@ -240,7 +240,7 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
     for horizon in horizons:
         target_date = run_date + timedelta(days=horizon)
         weather = await fetch_weather_for_date(target_date)
-        if not weather.available:
+        if horizon <= OPEN_METEO_MAX_HORIZON_DAYS and not weather.available:
             logger.warning(
                 "prediction_skipped_weather_unavailable target_date=%s horizon_days=%s reason=%s",
                 target_date.isoformat(),

@@ -454,6 +454,13 @@ button:disabled {
   line-height: 0.95;
 }
 
+.result-date-label {
+  color: var(--color-tertiary);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
 .result-decision span {
   display: block;
   color: var(--color-paragraph);
