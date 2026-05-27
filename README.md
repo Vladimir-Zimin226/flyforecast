@@ -152,7 +152,7 @@ backend/
 - `backend/app/services/weather.py` — Open-Meteo forecast API.
 - `backend/app/services/history.py` — historical snapshot из dataset.
 - `backend/app/services/predictor.py` — MVP baseline probability/decision/confidence.
-- `backend/app/services/llm.py` — объяснение результата через GigaChat.
+- `backend/app/services/llm.py` — объяснение результата через GigaChat, кэширование объяснений и фильтр доменных галлюцинаций.
 
 ## Frontend
 
@@ -197,6 +197,8 @@ docs/
 ├── business_analysis.md
 ├── dataset_preparation.md
 ├── data_experiments.md
+├── forecast_operations.md
+├── llm_failures.md
 ├── product_benchmarking.md
 ├── prototype.md
 └── privacy-policy/
@@ -206,6 +208,8 @@ docs/
 - `docs/business_analysis.md` — бизнес-анализ MVP.
 - `docs/dataset_preparation.md` — отчёт по подготовке датасета для ML-задачи.
 - `docs/data_experiments.md` — история источников, датасетов, сборщиков и ML-data экспериментов.
+- `docs/forecast_operations.md` — эксплуатационные правила: Open-Meteo guardrail, дальние прогнозы, LLM cache.
+- `docs/llm_failures.md` — журнал неудачных LLM-объяснений и принятых guardrails.
 - `docs/product_benchmarking.md` — продуктовый benchmarking.
 - `docs/prototype.md` — описание продуктового прототипа.
 - `docs/privacy-policy/` — материалы и образцы для политики обработки персональных данных.
@@ -250,6 +254,7 @@ DATABASE_URL=postgresql://flyforecast:change-me-postgres-password@db:5432/flyfor
 
 FLYFORECAST_DATASET_PATH=/app/data/processed/dataset_daily_flights_v3.csv
 PREDICTION_LOG_PATH=/app/data/interim/prediction_logs.jsonl
+EXPLANATION_CACHE_PATH=/app/data/interim/explanation_cache.sqlite
 
 AIRPORT_LATITUDE=43.958
 AIRPORT_LONGITUDE=145.683
@@ -435,6 +440,22 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 - `model_version`;
 - `data_version`;
 - `disclaimer`.
+
+---
+
+## Надёжность прогнозов и объяснений
+
+Расчёт вероятности не зависит от GigaChat. Backend сначала получает weather snapshot и historical snapshot, затем считает `probability_flight`, `decision` и `confidence` baseline-моделью.
+
+Правила доступности погоды:
+
+- на горизонте `0-15` дней Open-Meteo обязателен; если API временно недоступен, прогноз не строится и пользователь получает понятное предупреждение;
+- на горизонте `16+` дней прогноз строится без погодного API, по истории и сезонности;
+- forecast monitor сохраняет дальние прогнозы для последующей оценки качества, но пропускает ближние прогнозы, если weather snapshot недоступен.
+
+Пользовательское объяснение кэшируется в `EXPLANATION_CACHE_PATH`, чтобы одинаковые прогнозы не создавали повторные обращения к GigaChat. Дополнительно backend отклоняет LLM-ответы с доменными галлюцинациями про билеты, места, пассажиров или бронирование и заменяет их безопасным fallback-текстом.
+
+Подробнее см. `docs/forecast_operations.md` и `docs/llm_failures.md`.
 
 ---
 

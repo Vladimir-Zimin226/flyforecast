@@ -20,6 +20,7 @@ class Settings(BaseSettings):
 
     flyforecast_dataset_path: str = "/app/data/processed/dataset_daily_flights.csv"
     prediction_log_path: str = "/app/data/interim/prediction_logs.jsonl"
+    explanation_cache_path: str = "/app/data/interim/explanation_cache.sqlite"
     database_url: str = "postgresql://flyforecast:flyforecast@db:5432/flyforecast"
     user_store_path: str = "/app/data/interim/users.json"
     feedback_log_path: str = "/app/data/interim/feedback_logs.jsonl"
