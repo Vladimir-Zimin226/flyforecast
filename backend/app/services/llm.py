@@ -15,7 +15,7 @@ from app.services.predictor import DATA_VERSION, DISCLAIMER, MODEL_VERSION, get_
 
 
 logger = logging.getLogger("flyforecast.llm")
-PROMPT_VERSION = "explanation-v2-no-seat-availability"
+PROMPT_VERSION = "explanation-v3-decision-consistency"
 CACHE_SCHEMA_VERSION = 1
 FORBIDDEN_EXPLANATION_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
@@ -28,6 +28,27 @@ FORBIDDEN_EXPLANATION_PATTERNS = [
         r"\bсалон",
     )
 ]
+DECISION_CONTRADICTION_PATTERNS = {
+    "yes": [
+        re.compile(pattern, re.IGNORECASE)
+        for pattern in (
+            r"риск\s+(отмены|невыполнения|задержки)(\s+или\s+(отмены|невыполнения|задержки))?\s+(рейса\s+)?(выше|повышен|больше)",
+            r"вероятн\w*\s+(не\s+полетит|не\s+выполнится|будет\s+отмен)",
+            r"низк\w+\s+вероятност\w+\s+выполн",
+            r"маловероятн\w+",
+            r"скорее\s+не",
+        )
+    ],
+    "no": [
+        re.compile(pattern, re.IGNORECASE)
+        for pattern in (
+            r"скорее\s+(да|полетит|выполнится)",
+            r"высок\w+\s+шанс\w+\s+(вылета|выполнения)",
+            r"благоприятн\w+\s+окн",
+            r"риск\s+отмены\s+(ниже|невысок)",
+        )
+    ],
+}
 
 
 def _snapshot_dict(snapshot: WeatherSnapshot | HistoricalSnapshot) -> dict[str, Any]:
@@ -84,9 +105,13 @@ def _store_cached_explanation(cache_path: str, key: str, explanation: str) -> No
         logger.warning("explanation_cache_write_failed error=%s", exc)
 
 
-def _is_safe_explanation(text: str) -> bool:
+def _is_safe_explanation(text: str, decision: str) -> bool:
     normalized = " ".join(text.split()).lower()
-    return not any(pattern.search(normalized) for pattern in FORBIDDEN_EXPLANATION_PATTERNS)
+    if any(pattern.search(normalized) for pattern in FORBIDDEN_EXPLANATION_PATTERNS):
+        return False
+
+    contradiction_patterns = DECISION_CONTRADICTION_PATTERNS.get(decision, [])
+    return not any(pattern.search(normalized) for pattern in contradiction_patterns)
 
 
 def fallback_explanation(
@@ -98,8 +123,8 @@ def fallback_explanation(
     weather: WeatherSnapshot,
     history: HistoricalSnapshot,
 ) -> str:
-    decision_ru = "Да" if decision == "yes" else "Нет"
     probability_percent = round(probability_flight * 100)
+    historical_percent = round(history.historical_probability_flight * 100)
 
     if horizon_days > 46:
         horizon_text = "Дата далеко в будущем, поэтому оценка основана в основном на исторической полётности и сезонности."
@@ -108,10 +133,17 @@ def fallback_explanation(
     else:
         horizon_text = "Погодный прогноз для даты недоступен, поэтому оценка опирается на историю похожих дат."
 
+    if decision == "yes":
+        return (
+            f"Вероятность выполнения рейса — {probability_percent}%, поэтому дата выглядит скорее подходящей для вылета. "
+            f"Исторически похожие даты давали около {historical_percent}% выполненных рейсов. "
+            f"{horizon_text} Это ориентир для планирования, а не гарантия."
+        )
+
     return (
-        f"{decision_ru}, вероятность выполнения рейса — {probability_percent}%. "
-        f"Уверенность: {confidence}. {horizon_text} "
-        f"Это ориентир для планирования, а не гарантия."
+        f"Вероятность выполнения рейса — {probability_percent}%, поэтому риск отмены или невыполнения выглядит повышенным. "
+        f"Исторически похожие даты давали около {historical_percent}% выполненных рейсов. "
+        f"{horizon_text} Это ориентир для планирования, а не гарантия."
     )
 
 
@@ -177,7 +209,9 @@ def generate_user_explanation(
         "Не обещай выполнение рейса. Не называй сервис официальным источником. "
         "Не придумывай факты. Не меняй вероятность и решение. "
         "Строго запрещено упоминать билеты, наличие мест, пассажиров, бронирование, салон или продажи. "
+        "Если decision=yes, объясняй, почему дата выглядит скорее подходящей для вылета; не начинай с повышенного риска отмены. "
         "Если decision=no, пиши, что риск отмены или невыполнения выше, а не что нет мест. "
+        "Тон объяснения должен соответствовать decision: yes поддерживает вывод 'Да', no поддерживает вывод 'Нет'. "
         "Не используй Markdown-разметку. "
         "Пиши по-русски, спокойно и понятно. "
         "Максимум 3 предложения."
@@ -203,7 +237,7 @@ def generate_user_explanation(
 
         if text:
             explanation = text.strip()
-            if _is_safe_explanation(explanation):
+            if _is_safe_explanation(explanation, decision):
                 _store_cached_explanation(settings.explanation_cache_path, key, explanation)
                 return explanation
 
