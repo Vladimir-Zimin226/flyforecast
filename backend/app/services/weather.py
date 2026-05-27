@@ -46,7 +46,7 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
     if horizon_days < 0:
         return _unavailable_weather("Past dates are not supported by /predict in MVP.")
 
-    if horizon_days > 16:
+    if horizon_days > 15:
         return _unavailable_weather("Open-Meteo forecast is not available for this long horizon in MVP.")
 
     params = {

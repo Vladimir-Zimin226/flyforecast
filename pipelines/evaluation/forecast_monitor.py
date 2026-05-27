@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import csv
+import logging
 import sqlite3
 import sys
 from datetime import date, datetime, timedelta
@@ -30,11 +31,13 @@ from app.services.weather import fetch_weather_for_date
 DEFAULT_DB_PATH = "data/interim/evaluation/forecast_monitor.sqlite"
 DEFAULT_EXPORT_DIR = "data/interim/evaluation/exports"
 DEFAULT_BOARD_STATUS_PATH = "data/raw/flight_status/kunashir_flight_status_hourly.csv"
-DEFAULT_HORIZONS = ",".join(str(value) for value in range(0, 46))
-DEFAULT_EXTRA_HORIZONS = "60,90"
+DEFAULT_HORIZONS = ",".join(str(value) for value in range(0, 16))
+DEFAULT_EXTRA_HORIZONS = ""
 
 COMPLETED_BOARD_STATUSES = {"departed", "arrived", "in_flight"}
 UNKNOWN_OUTCOME_STATUSES = {"unknown", "planned_only", "needs_review"}
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
+logger = logging.getLogger("forecast_monitor")
 
 
 def parse_args() -> argparse.Namespace:
@@ -237,6 +240,15 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
     for horizon in horizons:
         target_date = run_date + timedelta(days=horizon)
         weather = await fetch_weather_for_date(target_date)
+        if not weather.available:
+            logger.warning(
+                "prediction_skipped_weather_unavailable target_date=%s horizon_days=%s reason=%s",
+                target_date.isoformat(),
+                horizon,
+                weather.reason,
+            )
+            continue
+
         history = get_historical_snapshot(target_date)
         probability = calculate_probability(horizon_days=horizon, weather=weather, history=history)
         confidence = get_confidence(horizon_days=horizon, weather=weather, history=history)

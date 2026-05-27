@@ -197,7 +197,7 @@ async def predict(
     )
 
     today = datetime.now().date()
-    max_date = today + timedelta(days=365)
+    max_date = today + timedelta(days=15)
 
     if target_date < today:
         logger.warning(
@@ -215,7 +215,7 @@ async def predict(
             target_date.isoformat(),
             max_date.isoformat(),
         )
-        raise HTTPException(status_code=400, detail="Date must be within 365 days from today")
+        raise HTTPException(status_code=400, detail="Погодный прогноз доступен только на ближайшие 15 дней.")
 
     horizon_days = get_horizon_days(target_date)
 
@@ -248,6 +248,18 @@ async def predict(
         weather.wind_speed_10m,
         weather.wind_gusts_10m,
     )
+
+    if not weather.available:
+        logger.warning(
+            "predict_blocked_weather_unavailable request_id=%s target_date=%s reason=%s",
+            request_id,
+            target_date.isoformat(),
+            weather.reason,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="Временные проблемы с погодными сервисами, предсказания пока недоступны.",
+        )
 
     history = get_historical_snapshot(target_date)
 

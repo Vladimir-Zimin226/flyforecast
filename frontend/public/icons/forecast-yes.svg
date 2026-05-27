@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" aria-hidden="true" role="img">
+  <style>
+    .cloud-back { animation: cloudBack 13s ease-in-out infinite alternate; }
+    .cloud-front { animation: cloudFront 10s ease-in-out infinite alternate; }
+    .plane-float { transform-origin: 80px 80px; animation: planeFloat 5s ease-in-out infinite; }
+    .sun-core { transform-origin: 48px 18px; animation: sunPulse 3.4s ease-in-out infinite; }
+    .sun-glow { transform-origin: 48px 18px; animation: sunGlow 4s ease-in-out infinite; }
+    .ray-ring { transform-origin: 48px 18px; animation: raySpin 16s linear infinite; }
+    .streak.s1 { animation: streakMove 3.2s ease-in-out infinite; }
+    .streak.s2 { animation: streakMove 3.8s ease-in-out infinite; }
+    .streak.s3 { animation: streakMove 4.4s ease-in-out infinite; }
+    .d1 { animation-delay: -0.8s; }
+    .d2 { animation-delay: -1.5s; }
+    .d3 { animation-delay: -2.1s; }
+    @keyframes cloudBack { 0% { transform: translateX(-3px) translateY(0); } 100% { transform: translateX(4px) translateY(-1px); } }
+    @keyframes cloudFront { 0% { transform: translateX(4px) translateY(0); } 100% { transform: translateX(-5px) translateY(1px); } }
+    @keyframes planeFloat { 0%, 100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-1px) rotate(1deg); } }
+    @keyframes sunPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+    @keyframes sunGlow { 0%, 100% { opacity: 0.44; transform: scale(1); } 50% { opacity: 0.62; transform: scale(1.08); } }
+    @keyframes raySpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes streakMove { 0% { transform: translateX(0) translateY(0); opacity: 0.18; } 50% { opacity: 0.5; } 100% { transform: translateX(3px) translateY(-3px); opacity: 0.15; } }
+  </style>
+  <defs>
+    <linearGradient id="cloudGradBack" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#e8eff7"/><stop offset="100%" stop-color="#c6d5e5"/></linearGradient>
+    <linearGradient id="cloudGradFront" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f4f8fd"/><stop offset="100%" stop-color="#d5e1ee"/></linearGradient>
+    <linearGradient id="planeGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ffffff"/><stop offset="100%" stop-color="#e7edf4"/></linearGradient>
+    <linearGradient id="planeShade" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#f7fbff"/><stop offset="100%" stop-color="#dce5ef"/></linearGradient>
+    <linearGradient id="sunGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#ffe88b"/><stop offset="100%" stop-color="#f7b733"/></linearGradient>
+    <radialGradient id="sunGlowGrad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffe89a" stop-opacity="0.55"/><stop offset="100%" stop-color="#ffe89a" stop-opacity="0"/></radialGradient>
+    <filter id="softShadow" x="-25%" y="-25%" width="150%" height="150%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#27415a" flood-opacity="0.12"/></filter>
+    <filter id="planeShadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="#24364d" flood-opacity="0.16"/></filter>
+  </defs>
+  <g filter="url(#softShadow)">
+    <circle class="sun-glow" cx="48" cy="18" r="19" fill="url(#sunGlowGrad)"/>
+    <g class="ray-ring" opacity="0.72">
+      <g stroke="#ffd86f" stroke-width="2.3" stroke-linecap="round">
+        <line x1="48" y1="-1" x2="48" y2="4"/><line x1="48" y1="32" x2="48" y2="37"/><line x1="29" y1="18" x2="24" y2="18"/><line x1="67" y1="18" x2="72" y2="18"/>
+        <line x1="35" y1="5" x2="31.5" y2="1.5"/><line x1="61" y1="31" x2="64.5" y2="34.5"/><line x1="61" y1="5" x2="64.5" y2="1.5"/><line x1="35" y1="31" x2="31.5" y2="34.5"/>
+      </g>
+    </g>
+    <circle class="sun-core" cx="48" cy="18" r="11.5" fill="url(#sunGrad)"/>
+  </g>
+  <g class="cloud-back" filter="url(#softShadow)">
+    <g fill="url(#cloudGradBack)" opacity="0.95"><ellipse cx="28" cy="60" rx="12" ry="8"/><ellipse cx="42" cy="56" rx="16" ry="11"/><ellipse cx="59" cy="61" rx="13" ry="9"/><ellipse cx="42" cy="65" rx="28" ry="9"/></g>
+    <g fill="url(#cloudGradBack)" opacity="0.92"><ellipse cx="116" cy="55" rx="13" ry="9"/><ellipse cx="131" cy="51" rx="17" ry="12"/><ellipse cx="146" cy="56" rx="12" ry="8"/><ellipse cx="131" cy="60" rx="28" ry="9"/></g>
+  </g>
+  <g fill="none" stroke="#b9d8f2" stroke-linecap="round" opacity="0.8">
+    <path class="streak s1" d="M56 30 Q66 22 77 18" stroke-width="2"/><path class="streak s2 d1" d="M58 35 Q68 26 78 22" stroke-width="1.6"/>
+    <path class="streak s2" d="M125 92 Q136 86 143 77" stroke-width="2"/><path class="streak s3 d2" d="M122 98 Q133 92 140 84" stroke-width="1.6"/>
+    <path class="streak s1 d3" d="M82 133 Q92 125 98 115" stroke-width="1.8"/><path class="streak s2 d1" d="M77 138 Q88 131 95 121" stroke-width="1.5"/><path class="streak s3" d="M26 113 Q34 103 43 96" stroke-width="1.8"/>
+  </g>
+  <g class="plane-float" filter="url(#planeShadow)">
+    <g transform="rotate(45 80 80)">
+      <g transform="translate(80 80) scale(1.12) translate(-80 -80)">
+        <path d="M80 16 C74 16 69.2 20.8 68.5 27.2 L65.4 54.5 L65.4 101.5 L68 124.8 C68.7 130.4 72.6 135.2 80 139.4 C87.4 135.2 91.3 130.4 92 124.8 L94.6 101.5 L94.6 54.5 L91.5 27.2 C90.8 20.8 86 16 80 16 Z" fill="url(#planeGrad)"/>
+        <path d="M80 16 C84.8 16 88.3 20.2 89.2 26 L92 54 L92 101.1 L89.7 124 C89.1 129.1 85.8 133.8 80 138 Z" fill="url(#planeShade)" opacity="0.95"/>
+        <path d="M73.6 27.4 C76.4 24.8 79 23.8 80 23.7 C81 23.8 83.6 24.8 86.4 27.4 L85 30 C83.4 28.9 81.8 28.2 80 28.1 C78.2 28.2 76.6 28.9 75 30 Z" fill="#2d415a"/>
+        <path d="M65.4 61 L24 81.6 C16.6 85.2 9.4 87.4 4.5 88.4 C2.1 88.9 1.4 91.8 3.4 93.3 C6.1 95.2 10.2 95.3 15.5 93.8 L66.4 78.3 Z" fill="#ffffff"/>
+        <path d="M94.6 61 L136 81.6 C143.4 85.2 150.6 87.4 155.5 88.4 C157.9 88.9 158.6 91.8 156.6 93.3 C153.9 95.2 149.8 95.3 144.5 93.8 L93.6 78.3 Z" fill="#f2f7fc"/>
+        <path d="M65.8 68.8 L31.2 85.8 C25.6 88.6 20.7 90.3 16.8 91.2 L66.3 83.5 Z" fill="#edf4fa"/><path d="M94.2 68.8 L128.8 85.8 C134.4 88.6 139.3 90.3 143.2 91.2 L93.7 83.5 Z" fill="#e8f0f8"/>
+        <ellipse cx="58" cy="76.3" rx="4.5" ry="7.2" fill="#d8e2ed"/><ellipse cx="102" cy="76.3" rx="4.5" ry="7.2" fill="#d8e2ed"/><ellipse cx="58" cy="72.8" rx="4.1" ry="1.9" fill="#314761"/><ellipse cx="102" cy="72.8" rx="4.1" ry="1.9" fill="#314761"/>
+        <ellipse cx="58" cy="77" rx="2.5" ry="4.8" fill="#eef4fa"/><ellipse cx="102" cy="77" rx="2.5" ry="4.8" fill="#eef4fa"/>
+        <rect x="73.2" y="36.8" width="3" height="5.4" rx="1.1" fill="#dbe4ef"/><rect x="83.8" y="36.8" width="3" height="5.4" rx="1.1" fill="#dbe4ef"/><rect x="79.2" y="41.5" width="1.6" height="63.2" rx="0.8" fill="#d4deea" opacity="0.92"/>
+        <g fill="#70849d">
+          <rect x="69.3" y="44" width="1.1" height="1.8" rx="0.55"/><rect x="69.3" y="49" width="1.1" height="1.8" rx="0.55"/><rect x="69.3" y="54" width="1.1" height="1.8" rx="0.55"/><rect x="69.3" y="59" width="1.1" height="1.8" rx="0.55"/><rect x="69.3" y="64" width="1.1" height="1.8" rx="0.55"/><rect x="69.3" y="69" width="1.1" height="1.8" rx="0.55"/><rect x="69.3" y="74" width="1.1" height="1.8" rx="0.55"/><rect x="69.3" y="79" width="1.1" height="1.8" rx="0.55"/><rect x="69.3" y="84" width="1.1" height="1.8" rx="0.55"/><rect x="69.3" y="89" width="1.1" height="1.8" rx="0.55"/><rect x="69.3" y="94" width="1.1" height="1.8" rx="0.55"/>
+          <rect x="89.6" y="44" width="1.1" height="1.8" rx="0.55"/><rect x="89.6" y="49" width="1.1" height="1.8" rx="0.55"/><rect x="89.6" y="54" width="1.1" height="1.8" rx="0.55"/><rect x="89.6" y="59" width="1.1" height="1.8" rx="0.55"/><rect x="89.6" y="64" width="1.1" height="1.8" rx="0.55"/><rect x="89.6" y="69" width="1.1" height="1.8" rx="0.55"/><rect x="89.6" y="74" width="1.1" height="1.8" rx="0.55"/><rect x="89.6" y="79" width="1.1" height="1.8" rx="0.55"/><rect x="89.6" y="84" width="1.1" height="1.8" rx="0.55"/><rect x="89.6" y="89" width="1.1" height="1.8" rx="0.55"/><rect x="89.6" y="94" width="1.1" height="1.8" rx="0.55"/>
+        </g>
+        <path d="M77.4 115.4 C77.9 119.6 78.7 123.1 80 126 C81.3 123.1 82.1 119.6 82.6 115.4 Z" fill="#d6e0eb"/>
+        <path d="M70.1 121.2 L51.6 131.6 C49.4 132.8 47.8 135.3 47.7 137.4 C51.7 136.4 55.5 135.1 59.2 133.4 L71.8 127.4 Z" fill="#f4f9fd"/>
+        <path d="M89.9 121.2 L108.4 131.6 C110.6 132.8 112.2 135.3 112.3 137.4 C108.3 136.4 104.5 135.1 100.8 133.4 L88.2 127.4 Z" fill="#edf4fb"/>
+        <path d="M80 109.3 L82.7 122.8 C83.1 124.7 82 126.2 80 127.8 C78 126.2 76.9 124.7 77.3 122.8 Z" fill="#eef4fa"/>
+      </g>
+    </g>
+  </g>
+  <g class="cloud-front" filter="url(#softShadow)">
+    <g fill="url(#cloudGradFront)" opacity="0.98"><ellipse cx="16" cy="137" rx="10" ry="7"/><ellipse cx="28" cy="134" rx="13" ry="9"/><ellipse cx="42" cy="138" rx="11" ry="7"/><ellipse cx="28" cy="141" rx="23" ry="7"/></g>
+    <g fill="url(#cloudGradFront)" opacity="0.99"><ellipse cx="53" cy="127" rx="11" ry="7"/><ellipse cx="66" cy="124" rx="15" ry="10"/><ellipse cx="81" cy="128" rx="12" ry="8"/><ellipse cx="66" cy="131" rx="26" ry="8"/></g>
+    <g fill="url(#cloudGradFront)" opacity="0.96"><ellipse cx="111" cy="121" rx="12" ry="8"/><ellipse cx="126" cy="117" rx="16" ry="11"/><ellipse cx="142" cy="122" rx="12" ry="8"/><ellipse cx="126" cy="126" rx="27" ry="8"/></g>
+  </g>
+</svg>
