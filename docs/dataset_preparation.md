@@ -757,3 +757,122 @@ ML-модель можно считать полезной только если
 4. Сравнить с `mvp-baseline-002` и seasonal baseline.
 5. Оценить Brier Score, calibration и ошибки по отменам.
 6. После этого решить, использовать ML как основную модель, дополнительный слой или оставить baseline для части горизонтов.
+
+---
+
+## Обновления от 28.05.2026
+
+После подключения дополнительных признаков Open-Meteo по координатам аэропорта Менделеево пересобран training dataset и добавлен отдельный fog-risk dataset.
+
+### Что сделано
+
+1. Текущий backend-прогноз усилен погодными признаками для ближнего горизонта:
+   - `visibility`;
+   - `cloud_cover_low`;
+   - `weather_code`;
+   - `dew_point_spread`;
+   - `fog_low_cloud_risk_score`;
+   - `fog_low_cloud_risk_level`.
+
+2. Baseline обновлён до версии:
+
+```text
+mvp-baseline-002
+```
+
+Новая версия использует risk score тумана/низкой облачности как дополнительную отрицательную погодную поправку для горизонта, где доступен Open-Meteo forecast.
+
+3. Пересобран `training_dataset_v1.csv`:
+
+```text
+data/processed/training_dataset_v1.csv
+```
+
+Актуальные параметры после пересборки:
+
+| Параметр | Значение |
+| --- | ---: |
+| Строк | `761` |
+| Колонок | `106` |
+| Минимальная дата | `2017-12-13` |
+| Максимальная дата | `2026-05-26` |
+| Completed | `411` |
+| Cancelled | `350` |
+| Weather feature columns | `74` |
+| `training_data_version` | `training-v2-openmeteo-fog-risk-2026-05-28` |
+
+4. Добавлен отдельный датасет для анализа тумана и низкой облачности:
+
+```text
+data/processed/mendeleyevo_fog_risk_dataset.csv
+```
+
+Он строится командой:
+
+```bash
+python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
+```
+
+Параметры датасета:
+
+| Параметр | Значение |
+| --- | ---: |
+| Строк | `3088` |
+| Период | `2017-12-13..2026-05-27` |
+| Размеченных flight days | `761` |
+| Visibility non-empty rows | `0` |
+
+### Новые признаки и пропуски
+
+Историческая `visibility` в Open-Meteo Archive по-прежнему не заполнена. Поэтому она не должна быть обязательным признаком для ML-модели:
+
+| Признак | Пропусков |
+| --- | ---: |
+| `mendeleyevo_visibility_min` | `100.00%` |
+| `mendeleyevo_visibility_mean` | `100.00%` |
+| `khomutovo_visibility_min` | `100.00%` |
+
+Зато новые proxy-признаки тумана/низкой облачности заполнены полностью:
+
+| Признак | Пропусков |
+| --- | ---: |
+| `mendeleyevo_cloud_cover_low_mean` | `0.00%` |
+| `mendeleyevo_cloud_cover_low_max` | `0.00%` |
+| `mendeleyevo_dew_point_spread_mean` | `0.00%` |
+| `mendeleyevo_dew_point_spread_le_2_flag` | `0.00%` |
+| `mendeleyevo_fog_low_cloud_risk_score` | `0.00%` |
+| `mendeleyevo_fog_low_cloud_risk_level` | `0.00%` |
+
+### Предварительная связь fog-risk с исходами рейсов
+
+На размеченных `761` днях fog-risk уже даёт ожидаемую градацию: чем выше риск тумана/низкой облачности, тем ниже доля выполненных рейсов.
+
+| Fog-risk level | Дней | Completion rate |
+| --- | ---: | ---: |
+| `high` | `56` | `0.3571` |
+| `medium` | `283` | `0.4523` |
+| `low` | `422` | `0.6232` |
+
+Это не доказывает причинность и не заменяет полноценную валидацию, но подтверждает, что proxy-признаки идут в правильном направлении и могут быть полезны для модели.
+
+### Как теперь трактовать датасеты
+
+- `dataset_daily_flights_v3.csv` остаётся fact dataset: факт рейса, статус, источник, confidence и reason metadata.
+- `training_dataset_v1.csv` остаётся широким ML-dataset: fact labels + календарь + rolling history + погодные признаки.
+- `mendeleyevo_fog_risk_dataset.csv` нужен для отдельного анализа тумана/низкой облачности по Менделеево и проверки связи с отменами.
+
+### Что планируется дальше
+
+1. Зафиксировать safe feature list для `training-v2-openmeteo-fog-risk-2026-05-28`.
+2. Исключить полностью пустые historical visibility-признаки из первой ML-модели или оставить их только как nullable diagnostic columns.
+3. Проверить корреляции новых fog-risk признаков с target без temporal leakage.
+4. Сделать chronological train/validation/test split.
+5. Сравнить:
+   - `mvp-baseline-002`;
+   - seasonal baseline;
+   - fog-risk baseline;
+   - Logistic Regression.
+6. Оценить отдельно:
+   - ближний горизонт, где есть forecast weather;
+   - дальний горизонт, где доступна только климатико-историческая оценка.
+7. Проверить calibration, Brier Score и ошибки именно по отменам, потому что для продукта особенно важно не пропускать рискованные даты.
