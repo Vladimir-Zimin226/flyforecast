@@ -21,6 +21,7 @@ from app.services.fog_risk import (
 
 
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+OPEN_METEO_HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
 MENDELEYEVO = {
     "latitude": 43.958,
     "longitude": 145.683,
@@ -36,6 +37,8 @@ HOURLY_FIELDS = [
     "weather_code",
     "wind_speed_10m",
     "wind_gusts_10m",
+]
+HISTORICAL_FORECAST_FIELDS = [
     "visibility",
 ]
 
@@ -123,18 +126,65 @@ def fetch_hourly_chunk(start_date: str, end_date: str) -> pd.DataFrame:
         response = client.get(OPEN_METEO_ARCHIVE_URL, params=params)
     response.raise_for_status()
     payload = response.json()
+    archive = hourly_payload_to_frame(payload, HOURLY_FIELDS)
+
+    forecast_params = {
+        "latitude": MENDELEYEVO["latitude"],
+        "longitude": MENDELEYEVO["longitude"],
+        "timezone": MENDELEYEVO["timezone"],
+        "start_date": start_date,
+        "end_date": end_date,
+        "hourly": ",".join(HISTORICAL_FORECAST_FIELDS),
+    }
+    with httpx.Client(timeout=60) as client:
+        response = client.get(OPEN_METEO_HISTORICAL_FORECAST_URL, params=forecast_params)
+    response.raise_for_status()
+    historical_forecast = hourly_payload_to_frame(response.json(), HISTORICAL_FORECAST_FIELDS)
+
+    return merge_hourly_sources(archive, historical_forecast)
+
+
+def hourly_payload_to_frame(payload: dict, hourly_fields: list[str]) -> pd.DataFrame:
     hourly = payload.get("hourly") or {}
     times = hourly.get("time") or []
     if not times:
         return pd.DataFrame()
 
     df = pd.DataFrame({"time": times})
-    for field in HOURLY_FIELDS:
+    for field in hourly_fields:
         values = hourly.get(field)
         if values is not None:
             df[field] = values
     df["date"] = pd.to_datetime(df["time"]).dt.date.astype(str)
     return df
+
+
+def merge_hourly_sources(archive: pd.DataFrame, historical_forecast: pd.DataFrame) -> pd.DataFrame:
+    if archive.empty:
+        return historical_forecast
+    if historical_forecast.empty:
+        return archive
+
+    merge_columns = ["time", "date"]
+    forecast_columns = [column for column in historical_forecast.columns if column not in merge_columns]
+    merged = archive.merge(
+        historical_forecast[merge_columns + forecast_columns],
+        on=merge_columns,
+        how="left",
+        suffixes=("", "_historical_forecast"),
+    )
+
+    for column in forecast_columns:
+        forecast_column = f"{column}_historical_forecast"
+        if forecast_column in merged.columns:
+            if column in merged.columns:
+                merged[column] = merged[column].combine_first(merged[forecast_column])
+                merged = merged.drop(columns=[forecast_column])
+            else:
+                merged[column] = merged[forecast_column]
+                merged = merged.drop(columns=[forecast_column])
+
+    return merged
 
 
 def load_or_fetch_weather(cache_path: Path, start_date: str, end_date: str, refresh: bool) -> pd.DataFrame:
@@ -147,8 +197,12 @@ def load_or_fetch_weather(cache_path: Path, start_date: str, end_date: str, refr
         if dates.issubset(cached_dates):
             return cache[cache["date"].isin(dates)].copy()
 
-    frames = [fetch_hourly_chunk(start, end) for start, end in month_starts(start_date, end_date)]
-    hourly = pd.concat([frame for frame in frames if not frame.empty], ignore_index=True) if frames else pd.DataFrame()
+    frames = [
+        frame.dropna(axis=1, how="all")
+        for frame in (fetch_hourly_chunk(start, end) for start, end in month_starts(start_date, end_date))
+        if not frame.empty
+    ]
+    hourly = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     daily = aggregate_daily_weather(hourly)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     daily.to_csv(cache_path, index=False, encoding="utf-8-sig")
@@ -268,7 +322,7 @@ def main() -> None:
 
     weather = load_or_fetch_weather(Path(args.cache), start_date, end_date, args.refresh_cache)
     dataset = weather.merge(target, on="date", how="left") if not target.empty else weather
-    dataset["data_version"] = "mendeleyevo-fog-risk-openmeteo-2026-05-28"
+    dataset["data_version"] = "mendeleyevo-fog-risk-openmeteo-historical-forecast-visibility-2026-05-28"
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     dataset.to_csv(output_path, index=False, encoding="utf-8-sig")

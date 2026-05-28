@@ -9,6 +9,7 @@
 - Главный практический источник сейчас - Open-Meteo по координатам Менделеево.
 - Для ближнего горизонта используем forecast weather.
 - Для истории используем Open-Meteo Archive как приближение фактической погоды дня.
+- Для historical visibility используем Open-Meteo Historical Forecast API, потому что обычный Archive возвращает `visibility` как пустой/undefined.
 
 ## Текущий прогноз
 
@@ -52,7 +53,7 @@ data/interim/weather/mendeleyevo_open_meteo_archive_fog_risk.csv
 
 ## Важное ограничение
 
-Open-Meteo Archive может не отдавать историческую `visibility` для точки Менделеево. Поэтому historical fog-risk строится не только на видимости, но и на proxy-признаках:
+Open-Meteo Archive не отдаёт историческую `visibility` для точки Менделеево, но Historical Forecast API отдаёт модельную visibility для части периода, начиная с `2021-03-23`. Поэтому historical fog-risk строится на сочетании visibility и proxy-признаков:
 
 - высокая влажность;
 - маленькая разница температуры и точки росы;
@@ -62,6 +63,12 @@ Open-Meteo Archive может не отдавать историческую `vi
 - осадки.
 
 Это не заменяет официальный METAR/TAF Менделеево, но дает числовой признак именно по координатам Кунашира, что полезнее для сервиса, чем авиационная погода Южно-Сахалинска.
+
+После пересборки 28.05.2026:
+
+- `mendeleyevo_fog_risk_dataset.csv`: `3088` строк;
+- `visibility_min` заполнена в `1892` строках;
+- на размеченных днях completion rate: `high=0.3925`, `medium=0.5030`, `low=0.7043`.
 
 ## Интерфейс
 

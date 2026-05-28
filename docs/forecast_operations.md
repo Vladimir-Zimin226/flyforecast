@@ -16,7 +16,8 @@
 - Backend рассчитывает `dew_point_spread`, `fog_low_cloud_risk_score` и `fog_low_cloud_risk_level`.
 - Baseline `mvp-baseline-002` использует эти признаки как дополнительную отрицательную поправку на риск тумана и низкой облачности.
 - Для исторического анализа используется `pipelines/training/build_mendeleyevo_fog_risk_dataset.py`.
-- Historical visibility может быть пустой в Open-Meteo Archive, поэтому historical fog-risk учитывает proxy-признаки: влажность, точку росы, низкую облачность, weather code, осадки и ветер.
+- Historical visibility берётся из Open-Meteo Historical Forecast API, потому что обычный Open-Meteo Archive возвращает `visibility` пустой/undefined.
+- Для дат без historical visibility fog-risk продолжает учитывать proxy-признаки: влажность, точку росы, низкую облачность, weather code, осадки и ветер.
 
 ## Кэш объяснений
 

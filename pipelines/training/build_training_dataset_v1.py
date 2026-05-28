@@ -1,6 +1,7 @@
 import argparse
 import math
 import sys
+import warnings
 from datetime import datetime
 from pathlib import Path
 
@@ -22,7 +23,8 @@ from app.services.fog_risk import (
 
 
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
-DATA_VERSION = "training-v2-openmeteo-fog-risk-2026-05-28"
+OPEN_METEO_HISTORICAL_FORECAST_URL = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+DATA_VERSION = "training-v3-openmeteo-historical-forecast-visibility-2026-05-28"
 
 LOCATIONS = {
     "mendeleyevo": {
@@ -51,6 +53,9 @@ HOURLY_FIELDS = [
     "wind_speed_10m",
     "wind_gusts_10m",
     "wind_direction_10m",
+]
+
+HISTORICAL_FORECAST_FIELDS = [
     "visibility",
 ]
 
@@ -86,7 +91,14 @@ def read_target(path: Path) -> pd.DataFrame:
     if "date" not in df.columns:
         raise ValueError(f"Target dataset has no date column after CSV cleanup: {list(df.columns)}")
 
-    for column in df.select_dtypes(include="object").columns:
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=".*'str' dtypes are included by select_dtypes.*",
+            category=Warning,
+        )
+        text_columns = df.select_dtypes(include="object").columns
+    for column in text_columns:
         df[column] = df[column].str.strip().str.strip(";")
 
     df["date"] = pd.to_datetime(df["date"]).dt.date.astype(str)
@@ -128,6 +140,33 @@ def fetch_hourly_archive(
 
     response.raise_for_status()
     payload = response.json()
+    return hourly_payload_to_frame(payload, hourly_fields, location_name)
+
+
+def fetch_hourly_historical_forecast(
+    location_name: str,
+    location: dict,
+    start_date: str,
+    end_date: str,
+    hourly_fields: list[str],
+) -> pd.DataFrame:
+    params = {
+        "latitude": location["latitude"],
+        "longitude": location["longitude"],
+        "timezone": location["timezone"],
+        "start_date": start_date,
+        "end_date": end_date,
+        "hourly": ",".join(hourly_fields),
+    }
+
+    with httpx.Client(timeout=60) as client:
+        response = client.get(OPEN_METEO_HISTORICAL_FORECAST_URL, params=params)
+    response.raise_for_status()
+    payload = response.json()
+    return hourly_payload_to_frame(payload, hourly_fields, location_name)
+
+
+def hourly_payload_to_frame(payload: dict, hourly_fields: list[str], location_name: str) -> pd.DataFrame:
     hourly = payload.get("hourly") or {}
     times = hourly.get("time") or []
     if not times:
@@ -142,6 +181,34 @@ def fetch_hourly_archive(
     df["date"] = pd.to_datetime(df["time"]).dt.date.astype(str)
     df["location"] = location_name
     return df
+
+
+def merge_hourly_sources(archive: pd.DataFrame, historical_forecast: pd.DataFrame) -> pd.DataFrame:
+    if archive.empty:
+        return historical_forecast
+    if historical_forecast.empty:
+        return archive
+
+    merge_columns = ["location", "time", "date"]
+    forecast_columns = [column for column in historical_forecast.columns if column not in merge_columns]
+    merged = archive.merge(
+        historical_forecast[merge_columns + forecast_columns],
+        on=merge_columns,
+        how="left",
+        suffixes=("", "_historical_forecast"),
+    )
+
+    for column in forecast_columns:
+        forecast_column = f"{column}_historical_forecast"
+        if forecast_column in merged.columns:
+            if column in merged.columns:
+                merged[column] = merged[column].combine_first(merged[forecast_column])
+                merged = merged.drop(columns=[forecast_column])
+            else:
+                merged[column] = merged[forecast_column]
+                merged = merged.drop(columns=[forecast_column])
+
+    return merged
 
 
 def circular_wind_direction(values: pd.Series, weights: pd.Series) -> float | None:
@@ -286,6 +353,14 @@ def ensure_weather_cache(target: pd.DataFrame, cache_path: Path, refresh: bool) 
             end_date=missing_dates[-1],
             hourly_fields=HOURLY_FIELDS,
         )
+        historical_forecast = fetch_hourly_historical_forecast(
+            location_name=location_name,
+            location=location,
+            start_date=missing_dates[0],
+            end_date=missing_dates[-1],
+            hourly_fields=HISTORICAL_FORECAST_FIELDS,
+        )
+        hourly = merge_hourly_sources(hourly, historical_forecast)
         daily = aggregate_daily_weather(hourly)
         if not daily.empty:
             frames.append(daily[daily["date"].isin(missing_dates)].copy())

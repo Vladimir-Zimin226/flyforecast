@@ -799,7 +799,7 @@ data/processed/training_dataset_v1.csv
 | Completed | `411` |
 | Cancelled | `350` |
 | Weather feature columns | `74` |
-| `training_data_version` | `training-v2-openmeteo-fog-risk-2026-05-28` |
+| `training_data_version` | `training-v3-openmeteo-historical-forecast-visibility-2026-05-28` |
 
 4. Добавлен отдельный датасет для анализа тумана и низкой облачности:
 
@@ -820,19 +820,20 @@ python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
 | Строк | `3088` |
 | Период | `2017-12-13..2026-05-27` |
 | Размеченных flight days | `761` |
-| Visibility non-empty rows | `0` |
+| Visibility non-empty rows | `1892` |
 
 ### Новые признаки и пропуски
 
-Историческая `visibility` в Open-Meteo Archive по-прежнему не заполнена. Поэтому она не должна быть обязательным признаком для ML-модели:
+Обычный Open-Meteo Archive по-прежнему не отдаёт historical `visibility`, но Historical Forecast API отдаёт этот признак начиная с `2021-03-23`. Поэтому visibility теперь можно использовать для части временного ряда, но модель должна корректно обрабатывать пропуски на ранних датах.
 
 | Признак | Пропусков |
 | --- | ---: |
-| `mendeleyevo_visibility_min` | `100.00%` |
-| `mendeleyevo_visibility_mean` | `100.00%` |
-| `khomutovo_visibility_min` | `100.00%` |
+| `mendeleyevo_visibility_min` | `41.39%` |
+| `mendeleyevo_visibility_mean` | `41.39%` |
+| `khomutovo_visibility_min` | `41.39%` |
+| `khomutovo_visibility_mean` | `41.39%` |
 
-Зато новые proxy-признаки тумана/низкой облачности заполнены полностью:
+Новые proxy-признаки тумана/низкой облачности по-прежнему заполнены полностью:
 
 | Признак | Пропусков |
 | --- | ---: |
@@ -843,15 +844,33 @@ python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
 | `mendeleyevo_fog_low_cloud_risk_score` | `0.00%` |
 | `mendeleyevo_fog_low_cloud_risk_level` | `0.00%` |
 
+Покрытие visibility:
+
+| Параметр | Значение |
+| --- | --- |
+| Первая дата с `mendeleyevo_visibility_min` | `2021-03-23` |
+| Последняя дата с `mendeleyevo_visibility_min` | `2026-05-26` |
+| Заполненных строк в `training_dataset_v1.csv` | `446 из 761` |
+
 ### Предварительная связь fog-risk с исходами рейсов
 
 На размеченных `761` днях fog-risk уже даёт ожидаемую градацию: чем выше риск тумана/низкой облачности, тем ниже доля выполненных рейсов.
 
 | Fog-risk level | Дней | Completion rate |
 | --- | ---: | ---: |
-| `high` | `56` | `0.3571` |
-| `medium` | `283` | `0.4523` |
-| `low` | `422` | `0.6232` |
+| `high` | `293` | `0.3925` |
+| `medium` | `167` | `0.5030` |
+| `low` | `301` | `0.7043` |
+
+Дополнительно по buckets минимальной visibility на размеченных днях с доступной видимостью:
+
+| Visibility bucket | Дней | Completion rate |
+| --- | ---: | ---: |
+| `<=1km` | `290` | `0.3966` |
+| `1-3km` | `44` | `0.4318` |
+| `3-6km` | `18` | `0.3333` |
+| `6-10km` | `29` | `0.7241` |
+| `>10km` | `65` | `0.7077` |
 
 Это не доказывает причинность и не заменяет полноценную валидацию, но подтверждает, что proxy-признаки идут в правильном направлении и могут быть полезны для модели.
 
@@ -863,8 +882,8 @@ python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
 
 ### Что планируется дальше
 
-1. Зафиксировать safe feature list для `training-v2-openmeteo-fog-risk-2026-05-28`.
-2. Исключить полностью пустые historical visibility-признаки из первой ML-модели или оставить их только как nullable diagnostic columns.
+1. Зафиксировать safe feature list для `training-v3-openmeteo-historical-forecast-visibility-2026-05-28`.
+2. Использовать `visibility_*` как частично заполненные признаки и добавить явный missing indicator для периода до `2021-03-23`.
 3. Проверить корреляции новых fog-risk признаков с target без temporal leakage.
 4. Сделать chronological train/validation/test split.
 5. Сравнить:
