@@ -1,6 +1,6 @@
 # MVP Baseline Model
 
-Этот документ фиксирует текущую логику прогноза `mvp-baseline-001`.
+Этот документ фиксирует текущую логику прогноза `mvp-baseline-002`.
 
 Baseline — это не обученная ML-модель. Это воспроизводимая эвристика в backend, которая даёт честную вероятностную оценку до появления и проверки ML-модели.
 
@@ -15,7 +15,7 @@ backend/app/services/predictor.py
 Текущие версии:
 
 ```text
-model_version: mvp-baseline-001
+model_version: mvp-baseline-002
 data_version: telegram-v2-plus-historical-board-manual-v3-2026-05-20
 ```
 
@@ -124,7 +124,7 @@ base = 0.65 * historical_probability_flight
 Погодная поправка применяется только для ближнего горизонта:
 
 ```text
-horizon_days <= 16
+horizon_days <= 15
 ```
 
 Если Open-Meteo forecast недоступен, погодная поправка равна `0`.
@@ -137,6 +137,11 @@ horizon_days <= 16
 | `wind_gusts_10m >= 18` | `-0.07` |
 | `relative_humidity_2m >= 92` | `-0.04` |
 | `cloud_cover >= 85` | `-0.03` |
+| `cloud_cover_low >= 80` | `-0.05` |
+| `visibility <= 3000` | `-0.06` |
+| `dew_point_spread <= 2` | `-0.04` |
+| `fog_low_cloud_risk_level == medium` | `-0.04` |
+| `fog_low_cloud_risk_level == high` | `-0.09` |
 | `precipitation >= 3` | `-0.03` |
 
 Итоговая вероятность ограничивается диапазоном:
@@ -256,8 +261,8 @@ Baseline:
 
 | Горизонт | Основная логика |
 | --- | --- |
-| `0..14/30` дней | ML-модель с forecast weather + history + calendar |
-| `31..365` дней | seasonal/historical model без фактической погоды |
+| `0..15` дней | forecast weather + fog-risk + history + calendar |
+| `16..365` дней | seasonal/historical model без фактической погоды |
 
 Причина: прогноз погоды на год вперёд недоступен, но пользователю всё равно нужен ориентир по дате. Для дальних дат корректнее давать не погодный прогноз, а историко-сезонную оценку.
 
@@ -293,7 +298,7 @@ Baseline можно менять только с обновлением `model_v
 - frozen training dataset version;
 - список safe features без утечек;
 - time-based train/validation/test split;
-- сравнение с `mvp-baseline-001`;
+- сравнение с `mvp-baseline-002`;
 - Brier Score;
 - calibration curve;
 - отчет по ближнему и дальнему горизонту;

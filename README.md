@@ -48,9 +48,9 @@
 - хранение пользователей, согласий, прогнозных событий и отзывов в Postgres;
 - ограничение: 5 бесплатных прогнозов без регистрации, без лимита для администратора;
 - endpoint прогноза `/predict?date=YYYY-MM-DD`;
-- Open-Meteo forecast API;
+- Open-Meteo forecast API с fog/low-cloud признаками для Менделеево;
 - GigaChat API для пользовательского объяснения;
-- baseline-расчёт вероятности `mvp-baseline-001`;
+- baseline-расчёт вероятности `mvp-baseline-002`;
 - legacy JSONL-логирование прогнозов для совместимости с monitor/pipeline;
 - hourly collector статусов рейсов по табло аэропорта;
 - forecast monitor для ledger прогнозов, фактов и метрик качества;
@@ -76,7 +76,8 @@ docs/data_experiments.md
 - сборка `dataset_daily_flights_v3.csv`;
 - ручной review спорных вылетов/невылетов;
 - forecast monitor;
-- `training_dataset_v1.csv` с погодой Open-Meteo Archive, календарём и rolling-признаками.
+- `training_dataset_v1.csv` с погодой Open-Meteo Archive, календарём и rolling-признаками;
+- `mendeleyevo_fog_risk_dataset.csv` для анализа тумана, низкой облачности и связи с исходами рейсов.
 
 Текущий production dataset задаётся через:
 
@@ -149,7 +150,8 @@ backend/
 - `backend/app/auth.py` — JWT и проверка пользователя/администратора.
 - `backend/app/schemas.py` — request/response-схемы, включая email-валидацию и лимит отзыва.
 - `backend/app/services/users.py` — Postgres-хранилище пользователей, согласий, прогнозных событий и отзывов.
-- `backend/app/services/weather.py` — Open-Meteo forecast API.
+- `backend/app/services/weather.py` — Open-Meteo forecast API по координатам Менделеево.
+- `backend/app/services/fog_risk.py` — единые правила расчёта dew point spread и риска тумана/низкой облачности.
 - `backend/app/services/history.py` — historical snapshot из dataset.
 - `backend/app/services/predictor.py` — MVP baseline probability/decision/confidence.
 - `backend/app/services/llm.py` — объяснение результата через GigaChat, кэширование объяснений и фильтр доменных галлюцинаций.
@@ -186,6 +188,7 @@ frontend/
 - `pipelines/flight_status/build_dataset_v3.py` — сборка v3 fact dataset.
 - `pipelines/evaluation/forecast_monitor.py` — ledger прогнозов и оценка качества.
 - `pipelines/training/build_training_dataset_v1.py` — weather-enriched training dataset.
+- `pipelines/training/build_mendeleyevo_fog_risk_dataset.py` — отдельный fog-risk dataset по координатам Менделеево.
 
 Подробнее см. `docs/data_experiments.md`.
 
@@ -197,6 +200,7 @@ docs/
 ├── business_analysis.md
 ├── dataset_preparation.md
 ├── data_experiments.md
+├── fog_risk_dataset.md
 ├── forecast_operations.md
 ├── llm_failures.md
 ├── product_benchmarking.md
@@ -204,10 +208,11 @@ docs/
 └── privacy-policy/
 ```
 
-- `docs/baseline_model.md` — как работает текущий `mvp-baseline-001`.
+- `docs/baseline_model.md` — как работает текущий `mvp-baseline-002`.
 - `docs/business_analysis.md` — бизнес-анализ MVP.
 - `docs/dataset_preparation.md` — отчёт по подготовке датасета для ML-задачи.
 - `docs/data_experiments.md` — история источников, датасетов, сборщиков и ML-data экспериментов.
+- `docs/fog_risk_dataset.md` — решение по Open-Meteo fog-risk, отложенным FlightRadar/Himawari и командам сборки.
 - `docs/forecast_operations.md` — эксплуатационные правила: Open-Meteo guardrail, дальние прогнозы, LLM cache.
 - `docs/llm_failures.md` — журнал неудачных LLM-объяснений и принятых guardrails.
 - `docs/product_benchmarking.md` — продуктовый benchmarking.
@@ -450,8 +455,17 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 Правила доступности погоды:
 
 - на горизонте `0-15` дней Open-Meteo обязателен; если API временно недоступен, прогноз не строится и пользователь получает понятное предупреждение;
-- на горизонте `16+` дней прогноз строится без погодного API, по истории и сезонности;
+- на горизонте `0-15` дней weather snapshot дополнительно содержит `visibility`, `cloud_cover_low`, `weather_code`, `dew_point_spread` и `fog_low_cloud_risk_*`;
+- на горизонте `16+` дней прогноз строится без погодного API, по истории и сезонности, и в интерфейсе маркируется как климатико-историческая оценка риска;
 - forecast monitor сохраняет дальние прогнозы для последующей оценки качества, но пропускает ближние прогнозы, если weather snapshot недоступен.
+
+Для анализа тумана и низкой облачности по Менделеево используется отдельный pipeline:
+
+```bash
+python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
+```
+
+Он собирает исторические Open-Meteo признаки по координатам аэропорта Менделеево и сопоставляет их с известными исходами рейсов из `dataset_daily_flights_v3.csv`.
 
 Пользовательское объяснение кэшируется в `EXPLANATION_CACHE_PATH`, чтобы одинаковые прогнозы не создавали повторные обращения к GigaChat. Дополнительно backend отклоняет LLM-ответы с доменными галлюцинациями про билеты, места, пассажиров или бронирование и заменяет их безопасным fallback-текстом.
 
@@ -476,9 +490,9 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 
 ## Ближайшие задачи
 
-1. Проверить `training_dataset_v1.csv` на корреляции, leakage и качество признаков.
+1. Проверить `training_dataset_v1.csv` и `mendeleyevo_fog_risk_dataset.csv` на корреляции, leakage и качество признаков.
 2. Добавить time-based train/validation/test split.
-3. Сравнить seasonal baseline и Logistic Regression.
+3. Сравнить seasonal baseline, fog-risk baseline и Logistic Regression.
 4. Считать Brier Score и calibration curve.
 5. Улучшить backend confidence/threshold rules после первых метрик forecast monitor.
 6. Добавить tests для `/health`, `/auth/register`, `/auth/login`, `/me`, `/predict`.

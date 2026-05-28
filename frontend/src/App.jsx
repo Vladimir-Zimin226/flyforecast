@@ -100,7 +100,7 @@ function decisionToneLabel(result) {
 }
 
 function lowConfidenceHint(result) {
-  if (result.horizon_days > 46) {
+  if (result.forecast_mode === "climate_history" || !result.weather?.available) {
     return "Дата далеко в будущем: точного прогноза погоды для нее пока нет, поэтому оценка опирается в основном на историю и сезонность. Сравните соседние даты.";
   }
 
@@ -1119,6 +1119,9 @@ export default function App() {
               <PredictionDecisionIcon decision={result.decision} />
               <div>
                 <div className="result-date-label">{formatPredictionDateTitle(result.date)}</div>
+                <div className={`forecast-mode-badge forecast-mode-${result.forecast_mode || "weather_model"}`}>
+                  {result.forecast_mode_label || "Прогноз с учетом погодной модели"}
+                </div>
                 <h2>{decisionLabel(result.decision)}</h2>
                 <span>{decisionToneLabel(result)}</span>
               </div>
@@ -1649,8 +1652,9 @@ export default function App() {
       <section className="card">
         <h2>Как это работает</h2>
         <p>
-          Сервис использует историю выполненных и отменённых дней, сезонность, календарные признаки и доступный погодный
-          прогноз. На дальние даты точного прогноза погоды нет, поэтому оценка становится менее уверенной.
+          На ближайшие даты сервис использует историю выполненных и отменённых дней, сезонность, календарные признаки и
+          погодную модель для Менделеево. На дальние даты точного прогноза погоды физически еще нет, поэтому результат
+          показывается как климатико-историческая оценка риска.
         </p>
         <button type="button" className="text-button policy-link" onClick={() => setPolicyOpen(true)}>
           Политика обработки персональных данных

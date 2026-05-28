@@ -57,6 +57,7 @@ data/processed/training_dataset_v1.csv
 ```text
 data/processed/dataset_daily_flights_v3.csv
 data/interim/weather/open_meteo_daily_weather_v1.csv
+data/processed/mendeleyevo_fog_risk_dataset.csv
 ```
 
 ### Где хранятся данные
@@ -74,6 +75,7 @@ data/interim/weather/open_meteo_daily_weather_v1.csv
 | `data/processed/dataset_daily_flights_v3.csv` | binary fact dataset v3 |
 | `data/interim/weather/open_meteo_daily_weather_v1.csv` | daily weather cache |
 | `data/processed/training_dataset_v1.csv` | итоговый training dataset v1 |
+| `data/processed/mendeleyevo_fog_risk_dataset.csv` | отдельный датасет признаков тумана/низкой облачности по Менделеево |
 
 Данные в `data/` не должны считаться публичной частью репозитория. Они являются рабочим активом проекта, поэтому будут предоставлены проверяющему отдельно.
 
@@ -125,6 +127,7 @@ python pipelines/flight_status/build_dataset_v3.py
 
 ```bash
 python pipelines/training/build_training_dataset_v1.py --refresh-weather
+python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
 ```
 
 Hourly collector обновляет текущие наблюдения примерно раз в час. Forecast monitor также работает циклически и формирует ledger прогнозов/исходов. Это соответствует предполагаемому использованию модели: фактические исходы рейсов можно фиксировать после завершения операционного дня, а качество прогнозов оценивать с лагом `D+2`.
@@ -184,7 +187,7 @@ Hourly collector обновляет текущие наблюдения прим
 - отдельные признаки по расписанию и номеру рейса;
 - airport operational data, если появится легальный источник;
 - более точные погодные признаки в окне времени рейса;
-- видимость, туман, нижнюю границу облачности, если найдётся стабильный источник;
+- видимость, туман, нижнюю облачность и dew point spread через текущий Open-Meteo forecast и отдельный fog-risk dataset;
 - ручную доразметку спорных `delayed/combined` дней.
 
 ---
@@ -278,7 +281,8 @@ is_flight_completed
 
 Вывод:
 
-- visibility-признаки нужно удалить из текущей версии features или заменить другим источником;
+- historical visibility может оставаться пустой в Open-Meteo Archive, поэтому ее нельзя считать главным историческим признаком;
+- для тумана используем proxy-признаки: влажность, dew point spread, низкая облачность, weather code, осадки и ветер;
 - rolling-пропуски в начале временного ряда нормальны и могут заполняться медианой/нейтральным значением;
 - target и дата заполнены полностью.
 
@@ -370,7 +374,7 @@ data/interim/flight_status/needs_manual_review_v3.csv
 - сезонность сильная: январь хуже мая/июля;
 - recent cancellation rolling features дают сильный сигнал, но нужно следить за отсутствием утечки;
 - данные по годам неоднородны: поздние годы содержат больше подтверждений из новых источников;
-- visibility отсутствует полностью, текущий Open-Meteo Archive не дал этот признак;
+- historical visibility отсутствует полностью в текущем Open-Meteo Archive, но добавлен отдельный fog-risk dataset на proxy-признаках;
 - `reason_class` и `message_count` нельзя использовать в модели как признаки, потому что это post-fact metadata.
 
 ---
@@ -553,7 +557,7 @@ source: telegram_manual_review_2026_05
 | Повторяющиеся Telegram texts | raw Telegram | не удалять на raw stage, контролировать при NLP split |
 | `unknown/planned/delayed` статусы | interim labels | исключать из binary target без review |
 | `combined/disrupted` | board/historical evidence | ручная логика: если нет completed evidence за дату, считать cancelled только после проверки |
-| Полностью пустой visibility | training v1 | удалить из feature set или заменить источником |
+| Полностью пустой historical visibility | training v1/fog-risk | не использовать как обязательный признак; опираться на proxy fog-risk |
 | Rolling NaN в начале ряда | training v1 | заполнить медианой/нейтральным значением внутри train pipeline |
 | Excel/CSV артефакты `;date`, trailing `;;;;` | локальный v3 CSV | чистка заголовков при чтении |
 | Смешанные reason classes | `reason_class` | не использовать как target; унифицировать для аналитики |
@@ -577,7 +581,7 @@ source: telegram_manual_review_2026_05
    - `event_date_sources`;
    - `data_version`;
    - `training_data_version`;
-   - `visibility_*`, пока они полностью пустые.
+   - `visibility_*`, если они полностью пустые в historical archive.
 5. Категориальные признаки (`season`) закодировать one-hot или заменить числовыми циклическими признаками.
 6. Numeric NaN заполнить только по train statistics.
 7. Масштабировать признаки для Logistic Regression.
@@ -703,7 +707,7 @@ Brier Score
 
 Сравнивать ML нужно минимум с:
 
-- текущим `mvp-baseline-001`, описанным в `docs/baseline_model.md`;
+- текущим `mvp-baseline-002`, описанным в `docs/baseline_model.md`;
 - seasonal baseline по месяцу/декаде;
 - constant baseline по train completed rate.
 
@@ -742,7 +746,7 @@ ML-модель можно считать полезной только если
 - есть temporal drift;
 - часть historical labels получена из неофициального Telegram-источника;
 - reason classes шумные и не готовы как target;
-- visibility-признаки пустые;
+- historical visibility-признаки пустые, но fog-risk proxy закрывает часть проблемы через низкую облачность, влажность и dew point spread;
 - для дальнего горизонта нет forecast weather.
 
 Дальнейший план:
@@ -750,6 +754,6 @@ ML-модель можно считать полезной только если
 1. Зафиксировать safe feature list.
 2. Сформировать chronological train/validation/test split.
 3. Обучить Logistic Regression как первый ML baseline.
-4. Сравнить с `mvp-baseline-001` и seasonal baseline.
+4. Сравнить с `mvp-baseline-002` и seasonal baseline.
 5. Оценить Brier Score, calibration и ошибки по отменам.
 6. После этого решить, использовать ML как основную модель, дополнительный слой или оставить baseline для части горизонтов.

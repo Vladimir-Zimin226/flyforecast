@@ -3,7 +3,7 @@ from datetime import date, datetime
 from app.schemas import HistoricalSnapshot, WeatherSnapshot
 
 
-MODEL_VERSION = "mvp-baseline-001"
+MODEL_VERSION = "mvp-baseline-002"
 DATA_VERSION = "telegram-v2-plus-historical-board-manual-v3-2026-05-20"
 
 DISCLAIMER = (
@@ -48,6 +48,20 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
     if weather.cloud_cover is not None and weather.cloud_cover >= 85:
         adjustment -= 0.03
 
+    if weather.cloud_cover_low is not None and weather.cloud_cover_low >= 80:
+        adjustment -= 0.05
+
+    if weather.visibility is not None and weather.visibility <= 3000:
+        adjustment -= 0.06
+
+    if weather.dew_point_spread is not None and weather.dew_point_spread <= 2:
+        adjustment -= 0.04
+
+    if weather.fog_low_cloud_risk_level == "medium":
+        adjustment -= 0.04
+    elif weather.fog_low_cloud_risk_level == "high":
+        adjustment -= 0.09
+
     if weather.precipitation is not None and weather.precipitation >= 3:
         adjustment -= 0.03
 
@@ -65,7 +79,7 @@ def calculate_probability(
         base = 0.65 * history.historical_probability_flight + 0.35 * history.decade_probability_flight
 
     # Погодную поправку используем только там, где forecast реально есть.
-    if horizon_days <= 16:
+    if horizon_days <= 15:
         base += calculate_weather_adjustment(weather)
 
     return round(min(max(base, 0.05), 0.95), 4)
@@ -103,6 +117,17 @@ def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, ho
     if horizon_days > 46:
         factors.append("дальний горизонт: точного прогноза погоды нет, уверенность ниже")
     elif weather.available:
+        if weather.fog_low_cloud_risk_level:
+            risk_labels = {"low": "низкий", "medium": "средний", "high": "высокий"}
+            factors.append(
+                f"риск тумана и низкой облачности: {risk_labels.get(weather.fog_low_cloud_risk_level, weather.fog_low_cloud_risk_level)}"
+            )
+        if weather.visibility is not None:
+            factors.append(f"минимальная видимость по прогнозу: {round(weather.visibility)} м")
+        if weather.cloud_cover_low is not None:
+            factors.append(f"низкая облачность по прогнозу: {weather.cloud_cover_low}%")
+        if weather.dew_point_spread is not None:
+            factors.append(f"разница температуры и точки росы: {weather.dew_point_spread} °C")
         if weather.wind_gusts_10m is not None:
             factors.append(f"средние порывы ветра по прогнозу: {weather.wind_gusts_10m} км/ч")
         if weather.relative_humidity_2m is not None:

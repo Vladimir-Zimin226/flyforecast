@@ -431,7 +431,7 @@ weather_feature_columns=58
 
 1. Проверить корреляции погодных признаков с `is_flight_completed`.
 2. Разделить train/validation/test по времени, без случайного shuffle.
-3. Сравнить текущий `mvp-baseline-001` из `docs/baseline_model.md`, seasonal baseline и Logistic Regression.
+3. Сравнить текущий `mvp-baseline-002` из `docs/baseline_model.md`, seasonal baseline и Logistic Regression.
 4. Считать Brier score, ROC-AUC, PR-AUC и calibration curve.
 5. Проверить, какие признаки реально помогают: погода Менделеево, погода Хомутово, rolling history, сезонность.
 6. Отдельно посмотреть fog-паттерны и дни с ручным `reason_class=fog`.

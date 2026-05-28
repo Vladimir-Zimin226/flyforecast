@@ -113,11 +113,17 @@ def init_db(conn: sqlite3.Connection) -> None:
             temperature_2m REAL,
             relative_humidity_2m REAL,
             dew_point_2m REAL,
+            dew_point_spread REAL,
             pressure_msl REAL,
             cloud_cover REAL,
+            cloud_cover_low REAL,
             precipitation REAL,
             wind_speed_10m REAL,
             wind_gusts_10m REAL,
+            weather_code REAL,
+            visibility REAL,
+            fog_low_cloud_risk_score REAL,
+            fog_low_cloud_risk_level TEXT,
             history_source TEXT NOT NULL,
             similar_days_count INTEGER NOT NULL,
             completed_count INTEGER NOT NULL,
@@ -173,7 +179,24 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    ensure_prediction_columns(conn)
     conn.commit()
+
+
+def ensure_prediction_columns(conn: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(predictions)").fetchall()}
+    columns = {
+        "dew_point_spread": "REAL",
+        "cloud_cover_low": "REAL",
+        "weather_code": "REAL",
+        "visibility": "REAL",
+        "fog_low_cloud_risk_score": "REAL",
+        "fog_low_cloud_risk_level": "TEXT",
+    }
+
+    for column, definition in columns.items():
+        if column not in existing:
+            conn.execute(f"ALTER TABLE predictions ADD COLUMN {column} {definition}")
 
 
 def get_or_create_run(
@@ -260,12 +283,14 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
                 run_id, created_at, run_date, target_date, horizon_days,
                 probability_flight, decision, confidence, model_version, data_version,
                 weather_source, weather_available, weather_reason,
-                temperature_2m, relative_humidity_2m, dew_point_2m, pressure_msl,
-                cloud_cover, precipitation, wind_speed_10m, wind_gusts_10m,
+                temperature_2m, relative_humidity_2m, dew_point_2m, dew_point_spread,
+                pressure_msl, cloud_cover, cloud_cover_low, precipitation,
+                wind_speed_10m, wind_gusts_10m, weather_code, visibility,
+                fog_low_cloud_risk_score, fog_low_cloud_risk_level,
                 history_source, similar_days_count, completed_count, cancelled_count,
                 historical_probability_flight, month_probability_flight, decade_probability_flight
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -284,11 +309,17 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
                 weather.temperature_2m,
                 weather.relative_humidity_2m,
                 weather.dew_point_2m,
+                weather.dew_point_spread,
                 weather.pressure_msl,
                 weather.cloud_cover,
+                weather.cloud_cover_low,
                 weather.precipitation,
                 weather.wind_speed_10m,
                 weather.wind_gusts_10m,
+                weather.weather_code,
+                weather.visibility,
+                weather.fog_low_cloud_risk_score,
+                weather.fog_low_cloud_risk_level,
                 history.source,
                 history.similar_days_count,
                 history.completed_count,

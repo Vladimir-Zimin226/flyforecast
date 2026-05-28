@@ -177,11 +177,17 @@ class WeatherSnapshot(BaseModel):
     temperature_2m: float | None = None
     relative_humidity_2m: float | None = None
     dew_point_2m: float | None = None
+    dew_point_spread: float | None = None
     pressure_msl: float | None = None
     cloud_cover: float | None = None
+    cloud_cover_low: float | None = None
     precipitation: float | None = None
     wind_speed_10m: float | None = None
     wind_gusts_10m: float | None = None
+    weather_code: float | None = None
+    visibility: float | None = None
+    fog_low_cloud_risk_score: float | None = None
+    fog_low_cloud_risk_level: str | None = None
 
 
 class HistoricalSnapshot(BaseModel):
@@ -200,6 +206,8 @@ class PredictResponse(BaseModel):
     probability_flight: float = Field(ge=0.0, le=1.0)
     confidence: str
     horizon_days: int
+    forecast_mode: str = Field(pattern="^(weather_model|climate_history)$")
+    forecast_mode_label: str
     explanation: str
     weather: WeatherSnapshot
     history: HistoricalSnapshot

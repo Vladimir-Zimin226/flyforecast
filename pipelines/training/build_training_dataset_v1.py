@@ -1,5 +1,6 @@
 import argparse
 import math
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -7,8 +8,21 @@ import httpx
 import pandas as pd
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+for candidate in (PROJECT_ROOT, PROJECT_ROOT / "backend"):
+    if (candidate / "app").exists():
+        sys.path.insert(0, str(candidate))
+        break
+
+from app.services.fog_risk import (
+    calculate_dew_point_spread,
+    calculate_fog_low_cloud_risk_score,
+    fog_low_cloud_risk_level,
+)
+
+
 OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
-DATA_VERSION = "training-v1-openmeteo-archive-2026-05-20"
+DATA_VERSION = "training-v2-openmeteo-fog-risk-2026-05-28"
 
 LOCATIONS = {
     "mendeleyevo": {
@@ -29,6 +43,7 @@ HOURLY_FIELDS = [
     "dew_point_2m",
     "pressure_msl",
     "cloud_cover",
+    "cloud_cover_low",
     "precipitation",
     "rain",
     "snowfall",
@@ -185,6 +200,8 @@ def aggregate_daily_weather(hourly: pd.DataFrame) -> pd.DataFrame:
                 "pressure_msl_min": minimum("pressure_msl"),
                 "cloud_cover_mean": mean("cloud_cover"),
                 "cloud_cover_max": maximum("cloud_cover"),
+                "cloud_cover_low_mean": mean("cloud_cover_low"),
+                "cloud_cover_low_max": maximum("cloud_cover_low"),
                 "precipitation_sum": total("precipitation"),
                 "rain_sum": total("rain"),
                 "snowfall_sum": total("snowfall"),
@@ -205,20 +222,40 @@ def aggregate_daily_weather(hourly: pd.DataFrame) -> pd.DataFrame:
 
         row["humidity_ge_92_flag"] = int((row["relative_humidity_2m_mean"] or 0) >= 92)
         row["cloud_ge_85_flag"] = int((row["cloud_cover_mean"] or 0) >= 85)
+        row["cloud_low_ge_70_flag"] = int((row["cloud_cover_low_mean"] or 0) >= 70)
+        row["cloud_low_ge_90_flag"] = int((row["cloud_cover_low_mean"] or 0) >= 90)
         row["wind_speed_ge_12_flag"] = int((row["wind_speed_10m_max"] or 0) >= 12)
         row["wind_gust_ge_18_flag"] = int((row["wind_gusts_10m_max"] or 0) >= 18)
         row["wind_gust_ge_50_flag"] = int((row["wind_gusts_10m_max"] or 0) >= 50)
         row["precipitation_flag"] = int((row["precipitation_sum"] or 0) > 0)
         row["snow_flag"] = int((row["snowfall_sum"] or 0) > 0)
         row["low_pressure_flag"] = int((row["pressure_msl_mean"] or 9999) <= 1000)
+        row["dew_point_spread_mean"] = calculate_dew_point_spread(
+            row["temperature_2m_mean"],
+            row["dew_point_2m_mean"],
+        )
+        row["dew_point_spread_le_2_flag"] = int(
+            row["dew_point_spread_mean"] is not None and row["dew_point_spread_mean"] <= 2
+        )
 
         low_visibility = row["visibility_min"] is not None and row["visibility_min"] <= 1000
         proxy_fog_conditions = (
             (row["relative_humidity_2m_mean"] or 0) >= 92
-            and (row["cloud_cover_mean"] or 0) >= 85
+            and ((row["cloud_cover_low_mean"] or 0) >= 70 or (row["cloud_cover_mean"] or 0) >= 85)
             and (row["wind_gusts_10m_max"] or 0) <= 35
         )
         row["fog_risk_proxy_flag"] = int(low_visibility or proxy_fog_conditions)
+        row["fog_low_cloud_risk_score"] = calculate_fog_low_cloud_risk_score(
+            visibility=row["visibility_min"],
+            cloud_cover_low=row["cloud_cover_low_mean"],
+            relative_humidity_2m=row["relative_humidity_2m_mean"],
+            dew_point_spread=row["dew_point_spread_mean"],
+            wind_speed_10m=row["wind_speed_10m_mean"],
+            wind_gusts_10m=row["wind_gusts_10m_max"],
+            precipitation=row["precipitation_sum"],
+            weather_code=row["weather_code_mode"],
+        )
+        row["fog_low_cloud_risk_level"] = fog_low_cloud_risk_level(row["fog_low_cloud_risk_score"])
 
         rows.append(row)
 

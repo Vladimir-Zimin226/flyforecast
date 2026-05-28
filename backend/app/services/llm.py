@@ -126,8 +126,8 @@ def fallback_explanation(
     probability_percent = round(probability_flight * 100)
     historical_percent = round(history.historical_probability_flight * 100)
 
-    if horizon_days > 46:
-        horizon_text = "Дата далеко в будущем, поэтому оценка основана в основном на исторической полётности и сезонности."
+    if not weather.available:
+        horizon_text = "Для этой даты нет точного погодного прогноза, поэтому это климатико-историческая оценка риска."
     elif weather.available:
         horizon_text = "Для даты доступен погодный прогноз, поэтому в оценке учтены погодные признаки."
     else:
@@ -199,6 +199,7 @@ def generate_user_explanation(
         "probability_flight": probability_flight,
         "confidence": confidence,
         "horizon_days": horizon_days,
+        "forecast_mode": "weather_model" if weather.available else "climate_history",
         "factors": factors,
         "disclaimer": DISCLAIMER,
     }
@@ -208,6 +209,7 @@ def generate_user_explanation(
         "Объясняй только вероятность выполнения или невыполнения рейса по погоде, истории и сезонности. "
         "Не обещай выполнение рейса. Не называй сервис официальным источником. "
         "Не придумывай факты. Не меняй вероятность и решение. "
+        "Если forecast_mode=climate_history, честно укажи, что точного прогноза погоды на дату еще нет и оценка основана на истории/сезонности. "
         "Строго запрещено упоминать билеты, наличие мест, пассажиров, бронирование, салон или продажи. "
         "Если decision=yes, объясняй, почему дата выглядит скорее подходящей для вылета; не начинай с повышенного риска отмены. "
         "Если decision=no, пиши, что риск отмены или невыполнения выше, а не что нет мест. "

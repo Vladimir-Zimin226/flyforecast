@@ -6,6 +6,11 @@ import httpx
 
 from app.config import get_settings
 from app.schemas import WeatherSnapshot
+from app.services.fog_risk import (
+    calculate_dew_point_spread,
+    calculate_fog_low_cloud_risk_score,
+    fog_low_cloud_risk_level,
+)
 
 
 logger = logging.getLogger("flyforecast.weather")
@@ -16,9 +21,12 @@ HOURLY_FIELDS = [
     "dew_point_2m",
     "pressure_msl",
     "cloud_cover",
+    "cloud_cover_low",
     "precipitation",
     "wind_speed_10m",
     "wind_gusts_10m",
+    "weather_code",
+    "visibility",
 ]
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
@@ -112,7 +120,29 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
             values[i] for i in indices
             if i < len(values) and values[i] is not None
         ]
-        aggregated[field] = round(sum(day_values) / len(day_values), 2) if day_values else None
+        if not day_values:
+            aggregated[field] = None
+        elif field == "visibility":
+            aggregated[field] = round(min(day_values), 2)
+        elif field == "weather_code":
+            aggregated[field] = float(max(set(day_values), key=day_values.count))
+        else:
+            aggregated[field] = round(sum(day_values) / len(day_values), 2)
+
+    dew_point_spread = calculate_dew_point_spread(
+        aggregated["temperature_2m"],
+        aggregated["dew_point_2m"],
+    )
+    fog_low_cloud_risk_score = calculate_fog_low_cloud_risk_score(
+        visibility=aggregated["visibility"],
+        cloud_cover_low=aggregated["cloud_cover_low"],
+        relative_humidity_2m=aggregated["relative_humidity_2m"],
+        dew_point_spread=dew_point_spread,
+        wind_speed_10m=aggregated["wind_speed_10m"],
+        wind_gusts_10m=aggregated["wind_gusts_10m"],
+        precipitation=aggregated["precipitation"],
+        weather_code=aggregated["weather_code"],
+    )
 
     return WeatherSnapshot(
         source="open-meteo",
@@ -120,9 +150,15 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
         temperature_2m=aggregated["temperature_2m"],
         relative_humidity_2m=aggregated["relative_humidity_2m"],
         dew_point_2m=aggregated["dew_point_2m"],
+        dew_point_spread=dew_point_spread,
         pressure_msl=aggregated["pressure_msl"],
         cloud_cover=aggregated["cloud_cover"],
+        cloud_cover_low=aggregated["cloud_cover_low"],
         precipitation=aggregated["precipitation"],
         wind_speed_10m=aggregated["wind_speed_10m"],
         wind_gusts_10m=aggregated["wind_gusts_10m"],
+        weather_code=aggregated["weather_code"],
+        visibility=aggregated["visibility"],
+        fog_low_cloud_risk_score=fog_low_cloud_risk_score,
+        fog_low_cloud_risk_level=fog_low_cloud_risk_level(fog_low_cloud_risk_score),
     )

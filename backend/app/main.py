@@ -232,7 +232,9 @@ async def predict(
         (
             "weather_snapshot request_id=%s target_date=%s source=%s available=%s reason=%s "
             "temperature_2m=%s humidity=%s dew_point_2m=%s pressure_msl=%s "
-            "cloud_cover=%s precipitation=%s wind_speed_10m=%s wind_gusts_10m=%s"
+            "cloud_cover=%s cloud_cover_low=%s visibility=%s weather_code=%s "
+            "dew_point_spread=%s fog_low_cloud_risk=%s precipitation=%s "
+            "wind_speed_10m=%s wind_gusts_10m=%s"
         ),
         request_id,
         target_date.isoformat(),
@@ -244,6 +246,11 @@ async def predict(
         weather.dew_point_2m,
         weather.pressure_msl,
         weather.cloud_cover,
+        weather.cloud_cover_low,
+        weather.visibility,
+        weather.weather_code,
+        weather.dew_point_spread,
+        weather.fog_low_cloud_risk_level,
         weather.precipitation,
         weather.wind_speed_10m,
         weather.wind_gusts_10m,
@@ -321,6 +328,13 @@ async def predict(
         history=history,
     )
 
+    forecast_mode = "weather_model" if horizon_days <= OPEN_METEO_MAX_HORIZON_DAYS and weather.available else "climate_history"
+    forecast_mode_label = (
+        "Прогноз с учетом погодной модели"
+        if forecast_mode == "weather_model"
+        else "Климатико-историческая оценка риска"
+    )
+
     logger.info(
         "explanation_generated request_id=%s target_date=%s explanation_length=%s",
         request_id,
@@ -334,6 +348,8 @@ async def predict(
         probability_flight=probability_flight,
         confidence=confidence,
         horizon_days=horizon_days,
+        forecast_mode=forecast_mode,
+        forecast_mode_label=forecast_mode_label,
         explanation=explanation,
         weather=weather,
         history=history,
@@ -408,6 +424,14 @@ def log_prediction(
         "weather_available": result.weather.available,
         "weather_source": result.weather.source,
         "weather_reason": result.weather.reason,
+        "forecast_mode": result.forecast_mode,
+        "forecast_mode_label": result.forecast_mode_label,
+        "visibility": result.weather.visibility,
+        "cloud_cover_low": result.weather.cloud_cover_low,
+        "weather_code": result.weather.weather_code,
+        "dew_point_spread": result.weather.dew_point_spread,
+        "fog_low_cloud_risk_score": result.weather.fog_low_cloud_risk_score,
+        "fog_low_cloud_risk_level": result.weather.fog_low_cloud_risk_level,
         "wind_speed_10m": result.weather.wind_speed_10m,
         "wind_gusts_10m": result.weather.wind_gusts_10m,
         "relative_humidity_2m": result.weather.relative_humidity_2m,
