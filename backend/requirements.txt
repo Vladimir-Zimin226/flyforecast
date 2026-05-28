@@ -6,3 +6,4 @@ pydantic-settings>=2.3.0
 python-dotenv>=1.0.1
 gigachat>=0.1.39
 psycopg[binary]>=3.2.0
+pandas>=2.2.0
