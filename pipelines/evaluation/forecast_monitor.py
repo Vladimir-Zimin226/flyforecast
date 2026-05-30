@@ -124,6 +124,9 @@ def init_db(conn: sqlite3.Connection) -> None:
             visibility REAL,
             fog_low_cloud_risk_score REAL,
             fog_low_cloud_risk_level TEXT,
+            aggregation_window_start_hour INTEGER,
+            aggregation_window_end_hour INTEGER,
+            aggregation_window_hours INTEGER,
             history_source TEXT NOT NULL,
             similar_days_count INTEGER NOT NULL,
             completed_count INTEGER NOT NULL,
@@ -192,6 +195,9 @@ def ensure_prediction_columns(conn: sqlite3.Connection) -> None:
         "visibility": "REAL",
         "fog_low_cloud_risk_score": "REAL",
         "fog_low_cloud_risk_level": "TEXT",
+        "aggregation_window_start_hour": "INTEGER",
+        "aggregation_window_end_hour": "INTEGER",
+        "aggregation_window_hours": "INTEGER",
     }
 
     for column, definition in columns.items():
@@ -287,10 +293,11 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
                 pressure_msl, cloud_cover, cloud_cover_low, precipitation,
                 wind_speed_10m, wind_gusts_10m, weather_code, visibility,
                 fog_low_cloud_risk_score, fog_low_cloud_risk_level,
+                aggregation_window_start_hour, aggregation_window_end_hour, aggregation_window_hours,
                 history_source, similar_days_count, completed_count, cancelled_count,
                 historical_probability_flight, month_probability_flight, decade_probability_flight
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -320,6 +327,9 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
                 weather.visibility,
                 weather.fog_low_cloud_risk_score,
                 weather.fog_low_cloud_risk_level,
+                weather.aggregation_window_start_hour,
+                weather.aggregation_window_end_hour,
+                weather.aggregation_window_hours,
                 history.source,
                 history.similar_days_count,
                 history.completed_count,

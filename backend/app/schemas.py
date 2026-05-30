@@ -188,6 +188,9 @@ class WeatherSnapshot(BaseModel):
     visibility: float | None = None
     fog_low_cloud_risk_score: float | None = None
     fog_low_cloud_risk_level: str | None = None
+    aggregation_window_start_hour: int | None = None
+    aggregation_window_end_hour: int | None = None
+    aggregation_window_hours: int | None = None
 
 
 class HistoricalSnapshot(BaseModel):

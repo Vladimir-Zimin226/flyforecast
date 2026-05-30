@@ -3,7 +3,7 @@ from datetime import date, datetime
 from app.schemas import HistoricalSnapshot, WeatherSnapshot
 
 
-MODEL_VERSION = "mvp-baseline-002"
+MODEL_VERSION = "mvp-baseline-003"
 DATA_VERSION = "telegram-v2-plus-historical-board-manual-v3-2026-05-20"
 
 DISCLAIMER = (
@@ -123,7 +123,14 @@ def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, ho
                 f"риск тумана и низкой облачности: {risk_labels.get(weather.fog_low_cloud_risk_level, weather.fog_low_cloud_risk_level)}"
             )
         if weather.visibility is not None:
-            factors.append(f"минимальная видимость по прогнозу: {round(weather.visibility)} м")
+            if weather.aggregation_window_start_hour is not None and weather.aggregation_window_end_hour is not None:
+                factors.append(
+                    "видимость в рабочем окне "
+                    f"{weather.aggregation_window_start_hour:02d}:00-{weather.aggregation_window_end_hour:02d}:00: "
+                    f"{round(weather.visibility)} м"
+                )
+            else:
+                factors.append(f"видимость по прогнозу: {round(weather.visibility)} м")
         if weather.cloud_cover_low is not None:
             factors.append(f"низкая облачность по прогнозу: {weather.cloud_cover_low}%")
         if weather.dew_point_spread is not None:

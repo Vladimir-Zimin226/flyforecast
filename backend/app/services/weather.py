@@ -39,6 +39,7 @@ OPEN_METEO_MAX_HORIZON_DAYS = 15
 OPEN_METEO_RETRIES = 2
 OPEN_METEO_RETRY_DELAY_SECONDS = 0.8
 OPEN_METEO_CACHE_FORECAST_DAYS = OPEN_METEO_MAX_HORIZON_DAYS + 1
+OPEN_METEO_CACHE_PROVIDER = "open-meteo-operational-window-v1"
 
 MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
 MET_NO_MAX_HORIZON_DAYS = 9
@@ -60,8 +61,20 @@ def _mean(values: list[float]) -> float | None:
     return round(sum(values) / len(values), 2) if values else None
 
 
-def _minimum(values: list[float]) -> float | None:
-    return round(min(values), 2) if values else None
+def _quantile(values: list[float], q: float) -> float | None:
+    if not values:
+        return None
+
+    sorted_values = sorted(values)
+    if len(sorted_values) == 1:
+        return round(sorted_values[0], 2)
+
+    position = (len(sorted_values) - 1) * q
+    lower_index = int(position)
+    upper_index = min(lower_index + 1, len(sorted_values) - 1)
+    weight = position - lower_index
+    value = sorted_values[lower_index] * (1 - weight) + sorted_values[upper_index] * weight
+    return round(value, 2)
 
 
 def _mode(values: list[float]) -> float | None:
@@ -83,6 +96,9 @@ def _build_weather_snapshot(
     reason: str | None,
     aggregated: dict[str, float | None],
     extra_fog_risk_score: float = 0.0,
+    aggregation_window_start_hour: int | None = None,
+    aggregation_window_end_hour: int | None = None,
+    aggregation_window_hours: int | None = None,
 ) -> WeatherSnapshot:
     dew_point_spread = calculate_dew_point_spread(
         aggregated.get("temperature_2m"),
@@ -118,7 +134,48 @@ def _build_weather_snapshot(
         visibility=aggregated.get("visibility"),
         fog_low_cloud_risk_score=fog_low_cloud_risk_score,
         fog_low_cloud_risk_level=fog_low_cloud_risk_level(fog_low_cloud_risk_score),
+        aggregation_window_start_hour=aggregation_window_start_hour,
+        aggregation_window_end_hour=aggregation_window_end_hour,
+        aggregation_window_hours=aggregation_window_hours,
     )
+
+
+def _weather_window(settings: Settings) -> tuple[int, int]:
+    start_hour = min(max(int(settings.weather_forecast_window_start_hour), 0), 23)
+    end_hour = min(max(int(settings.weather_forecast_window_end_hour), 0), 23)
+    return start_hour, end_hour
+
+
+def _hour_in_window(hour: int, start_hour: int, end_hour: int) -> bool:
+    if start_hour <= end_hour:
+        return start_hour <= hour <= end_hour
+    return hour >= start_hour or hour <= end_hour
+
+
+def _hour_from_open_meteo_time(value: str) -> int | None:
+    try:
+        return datetime.fromisoformat(value).hour
+    except ValueError:
+        return None
+
+
+def _filter_indices_to_window(
+    times: list,
+    indices: list[int],
+    *,
+    start_hour: int,
+    end_hour: int,
+) -> list[int]:
+    filtered: list[int] = []
+    for index in indices:
+        if index >= len(times) or not isinstance(times[index], str):
+            continue
+
+        hour = _hour_from_open_meteo_time(times[index])
+        if hour is not None and _hour_in_window(hour, start_hour, end_hour):
+            filtered.append(index)
+
+    return filtered or indices
 
 
 def _connect_weather_cache(path: str) -> sqlite3.Connection:
@@ -151,7 +208,7 @@ def _load_open_meteo_cache(
                 FROM weather_forecast_cache
                 WHERE target_date = ? AND provider = ?
                 """,
-                (target_date.isoformat(), "open-meteo"),
+                (target_date.isoformat(), OPEN_METEO_CACHE_PROVIDER),
             ).fetchone()
     except sqlite3.Error as exc:
         logger.warning("weather_cache_read_failed target_date=%s error=%s", target_date.isoformat(), exc)
@@ -196,7 +253,7 @@ def _store_open_meteo_cache(settings: Settings, snapshots: dict[date, WeatherSna
     rows = [
         (
             target_date.isoformat(),
-            "open-meteo",
+            OPEN_METEO_CACHE_PROVIDER,
             json.dumps(snapshot.model_dump(), ensure_ascii=False),
             fetched_at,
         )
@@ -222,10 +279,11 @@ def _store_open_meteo_cache(settings: Settings, snapshots: dict[date, WeatherSna
         logger.warning("weather_cache_write_failed rows=%s error=%s", len(rows), exc)
 
 
-def _open_meteo_payload_to_snapshots(payload: dict) -> dict[date, WeatherSnapshot]:
+def _open_meteo_payload_to_snapshots(payload: dict, settings: Settings) -> dict[date, WeatherSnapshot]:
     hourly = payload.get("hourly", {})
     times = hourly.get("time", [])
     date_to_indices: dict[date, list[int]] = {}
+    start_hour, end_hour = _weather_window(settings)
 
     for index, value in enumerate(times):
         if not isinstance(value, str):
@@ -239,16 +297,22 @@ def _open_meteo_payload_to_snapshots(payload: dict) -> dict[date, WeatherSnapsho
     snapshots: dict[date, WeatherSnapshot] = {}
     for target_date, indices in date_to_indices.items():
         aggregated: dict[str, float | None] = {}
+        window_indices = _filter_indices_to_window(
+            times,
+            indices,
+            start_hour=start_hour,
+            end_hour=end_hour,
+        )
 
         for field in HOURLY_FIELDS:
             values = hourly.get(field, [])
             day_values = [
                 float(values[i])
-                for i in indices
+                for i in window_indices
                 if i < len(values) and values[i] is not None
             ]
             if field == "visibility":
-                aggregated[field] = _minimum(day_values)
+                aggregated[field] = _quantile(day_values, 0.25)
             elif field == "weather_code":
                 aggregated[field] = _mode(day_values)
             else:
@@ -258,6 +322,9 @@ def _open_meteo_payload_to_snapshots(payload: dict) -> dict[date, WeatherSnapsho
             source="open-meteo",
             reason=None,
             aggregated=aggregated,
+            aggregation_window_start_hour=start_hour,
+            aggregation_window_end_hour=end_hour,
+            aggregation_window_hours=len(window_indices),
         )
 
     return snapshots
@@ -277,7 +344,7 @@ async def _fetch_open_meteo_snapshots(settings: Settings) -> tuple[dict[date, We
             try:
                 response = await client.get(OPEN_METEO_URL, params=params)
                 response.raise_for_status()
-                snapshots = _open_meteo_payload_to_snapshots(response.json())
+                snapshots = _open_meteo_payload_to_snapshots(response.json(), settings)
                 if not snapshots:
                     return None, "Open-Meteo returned no hourly weather rows."
                 return snapshots, None
@@ -336,13 +403,15 @@ def _met_no_fog_extra_score(fog_area_fraction: float | None) -> float:
 def _met_no_payload_to_snapshot(
     payload: dict,
     target_date: date,
-    timezone_name: str,
+    settings: Settings,
 ) -> WeatherSnapshot | None:
     timeseries = payload.get("properties", {}).get("timeseries", [])
+    start_hour, end_hour = _weather_window(settings)
     rows: list[dict[str, float | None]] = []
+    fallback_rows: list[dict[str, float | None]] = []
 
     for item in timeseries:
-        local_datetime = _parse_met_no_time(item.get("time"), timezone_name)
+        local_datetime = _parse_met_no_time(item.get("time"), settings.airport_timezone)
         if local_datetime is None or local_datetime.date() != target_date:
             continue
 
@@ -351,21 +420,23 @@ def _met_no_payload_to_snapshot(
         wind_speed = _float_or_none(instant.get("wind_speed"))
         wind_gusts = _float_or_none(instant.get("wind_speed_of_gust"))
 
-        rows.append(
-            {
-                "temperature_2m": _float_or_none(instant.get("air_temperature")),
-                "relative_humidity_2m": _float_or_none(instant.get("relative_humidity")),
-                "dew_point_2m": _float_or_none(instant.get("dew_point_temperature")),
-                "pressure_msl": _float_or_none(instant.get("air_pressure_at_sea_level")),
-                "cloud_cover": _float_or_none(instant.get("cloud_area_fraction")),
-                "cloud_cover_low": _float_or_none(instant.get("cloud_area_fraction_low")),
-                "precipitation": _met_no_precipitation(data),
-                "wind_speed_10m": round(wind_speed * 3.6, 2) if wind_speed is not None else None,
-                "wind_gusts_10m": round(wind_gusts * 3.6, 2) if wind_gusts is not None else None,
-                "fog_area_fraction": _float_or_none(instant.get("fog_area_fraction")),
-            }
-        )
+        row = {
+            "temperature_2m": _float_or_none(instant.get("air_temperature")),
+            "relative_humidity_2m": _float_or_none(instant.get("relative_humidity")),
+            "dew_point_2m": _float_or_none(instant.get("dew_point_temperature")),
+            "pressure_msl": _float_or_none(instant.get("air_pressure_at_sea_level")),
+            "cloud_cover": _float_or_none(instant.get("cloud_area_fraction")),
+            "cloud_cover_low": _float_or_none(instant.get("cloud_area_fraction_low")),
+            "precipitation": _met_no_precipitation(data),
+            "wind_speed_10m": round(wind_speed * 3.6, 2) if wind_speed is not None else None,
+            "wind_gusts_10m": round(wind_gusts * 3.6, 2) if wind_gusts is not None else None,
+            "fog_area_fraction": _float_or_none(instant.get("fog_area_fraction")),
+        }
+        fallback_rows.append(row)
+        if _hour_in_window(local_datetime.hour, start_hour, end_hour):
+            rows.append(row)
 
+    rows = rows or fallback_rows
     if not rows:
         return None
 
@@ -394,6 +465,9 @@ def _met_no_payload_to_snapshot(
         reason="Open-Meteo недоступен; используется резервный прогноз MET Norway без видимости.",
         aggregated=aggregated,
         extra_fog_risk_score=_met_no_fog_extra_score(fog_area_fraction),
+        aggregation_window_start_hour=start_hour,
+        aggregation_window_end_hour=end_hour,
+        aggregation_window_hours=len(rows),
     )
 
 
@@ -418,7 +492,7 @@ async def _fetch_met_no_snapshot(
                 snapshot = _met_no_payload_to_snapshot(
                     response.json(),
                     target_date=target_date,
-                    timezone_name=settings.airport_timezone,
+                    settings=settings,
                 )
                 if snapshot is None:
                     return None, "MET Norway returned no rows for target date."

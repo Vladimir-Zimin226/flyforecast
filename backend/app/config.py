@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     weather_forecast_cache_path: str = "/app/data/interim/weather_forecast_cache.sqlite"
     weather_cache_fresh_hours: int = 6
     weather_cache_stale_hours: int = 72
+    weather_forecast_window_start_hour: int = 8
+    weather_forecast_window_end_hour: int = 20
     met_no_fallback_enabled: bool = True
     met_no_user_agent: str = "flyforecast.ru/0.1(+https://flyforecast.ru;admin@example.com)"
     flight_status_dataset_path: str = "/app/data/raw/flight_status/kunashir_flight_status_hourly.csv"

@@ -234,7 +234,7 @@ async def predict(
             "temperature_2m=%s humidity=%s dew_point_2m=%s pressure_msl=%s "
             "cloud_cover=%s cloud_cover_low=%s visibility=%s weather_code=%s "
             "dew_point_spread=%s fog_low_cloud_risk=%s precipitation=%s "
-            "wind_speed_10m=%s wind_gusts_10m=%s"
+            "wind_speed_10m=%s wind_gusts_10m=%s aggregation_window=%s-%s hours=%s"
         ),
         request_id,
         target_date.isoformat(),
@@ -254,6 +254,9 @@ async def predict(
         weather.precipitation,
         weather.wind_speed_10m,
         weather.wind_gusts_10m,
+        weather.aggregation_window_start_hour,
+        weather.aggregation_window_end_hour,
+        weather.aggregation_window_hours,
     )
 
     if horizon_days <= OPEN_METEO_MAX_HORIZON_DAYS and not weather.available:
@@ -432,6 +435,9 @@ def log_prediction(
         "dew_point_spread": result.weather.dew_point_spread,
         "fog_low_cloud_risk_score": result.weather.fog_low_cloud_risk_score,
         "fog_low_cloud_risk_level": result.weather.fog_low_cloud_risk_level,
+        "aggregation_window_start_hour": result.weather.aggregation_window_start_hour,
+        "aggregation_window_end_hour": result.weather.aggregation_window_end_hour,
+        "aggregation_window_hours": result.weather.aggregation_window_hours,
         "wind_speed_10m": result.weather.wind_speed_10m,
         "wind_gusts_10m": result.weather.wind_gusts_10m,
         "relative_humidity_2m": result.weather.relative_humidity_2m,

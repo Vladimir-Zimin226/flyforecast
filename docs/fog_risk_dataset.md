@@ -31,7 +31,7 @@ Backend запрашивает дополнительные Open-Meteo поля:
 - `fog_low_cloud_risk_score`;
 - `fog_low_cloud_risk_level`.
 
-Эти признаки используются в baseline-поправке `mvp-baseline-002`.
+Эти признаки используются в baseline-поправке `mvp-baseline-003`.
 
 ## Исторический датасет
 
