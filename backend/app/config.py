@@ -6,8 +6,6 @@ class Settings(BaseSettings):
     app_env: str = "local"
     backend_cors_origins: str = "http://localhost:5173,http://localhost:8080"
 
-    test_username: str = "demo"
-    test_password: str = "demouser123"
     jwt_secret: str = "ferrum-molibden"
     admin_email: str = "admin@example.com"
     admin_password: str = "change-me-admin-password"
