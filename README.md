@@ -260,6 +260,11 @@ DATABASE_URL=postgresql://flyforecast:change-me-postgres-password@db:5432/flyfor
 FLYFORECAST_DATASET_PATH=/app/data/processed/dataset_daily_flights_v3.csv
 PREDICTION_LOG_PATH=/app/data/interim/prediction_logs.jsonl
 EXPLANATION_CACHE_PATH=/app/data/interim/explanation_cache.sqlite
+WEATHER_FORECAST_CACHE_PATH=/app/data/interim/weather_forecast_cache.sqlite
+WEATHER_CACHE_FRESH_HOURS=6
+WEATHER_CACHE_STALE_HOURS=72
+MET_NO_FALLBACK_ENABLED=true
+MET_NO_USER_AGENT=flyforecast.ru/0.1(+https://flyforecast.ru;admin@example.com)
 
 AIRPORT_LATITUDE=43.958
 AIRPORT_LONGITUDE=145.683
@@ -454,10 +459,12 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 
 Правила доступности погоды:
 
-- на горизонте `0-15` дней Open-Meteo обязателен; если API временно недоступен, прогноз не строится и пользователь получает понятное предупреждение;
+- на горизонте `0-15` дней backend использует forecast weather snapshot: fresh Open-Meteo cache, live Open-Meteo, stale Open-Meteo cache, затем MET Norway fallback для `0-9` дней;
+- если все погодные слои недоступны, прогноз не строится и пользователь получает понятное предупреждение;
 - на горизонте `0-15` дней weather snapshot дополнительно содержит `visibility`, `cloud_cover_low`, `weather_code`, `dew_point_spread` и `fog_low_cloud_risk_*`;
+- MET Norway fallback не содержит прямой `visibility`, поэтому fog-risk в этом режиме считается по доступным proxy-признакам;
 - на горизонте `16+` дней прогноз строится без погодного API, по истории и сезонности, и в интерфейсе маркируется как климатико-историческая оценка риска;
-- forecast monitor сохраняет дальние прогнозы для последующей оценки качества, но пропускает ближние прогнозы, если weather snapshot недоступен.
+- forecast monitor сохраняет дальние прогнозы для последующей оценки качества, но пропускает ближние прогнозы, если weather snapshot недоступен после всех fallback-слоёв.
 
 Для анализа тумана и низкой облачности по Менделеево используется отдельный pipeline:
 

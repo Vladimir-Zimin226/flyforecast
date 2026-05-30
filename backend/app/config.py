@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     feedback_log_path: str = "/app/data/interim/feedback_logs.jsonl"
     consent_log_path: str = "/app/data/interim/consent_logs.jsonl"
     forecast_monitor_db_path: str = "/app/data/interim/evaluation/forecast_monitor.sqlite"
+    weather_forecast_cache_path: str = "/app/data/interim/weather_forecast_cache.sqlite"
+    weather_cache_fresh_hours: int = 6
+    weather_cache_stale_hours: int = 72
+    met_no_fallback_enabled: bool = True
+    met_no_user_agent: str = "flyforecast.ru/0.1(+https://flyforecast.ru;admin@example.com)"
     flight_status_dataset_path: str = "/app/data/raw/flight_status/kunashir_flight_status_hourly.csv"
     flight_status_errors_path: str = "/app/data/raw/flight_status/collection_errors.csv"
     background_service_stale_hours: int = 26
