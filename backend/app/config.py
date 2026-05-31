@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     weather_cache_stale_hours: int = 72
     weather_forecast_window_start_hour: int = 8
     weather_forecast_window_end_hour: int = 20
+    weather_flight_window_min_hours: int = 3
+    weather_flight_window_min_visibility: float = 5000.0
+    weather_flight_window_max_cloud_low: float = 80.0
+    weather_flight_window_max_wind_gusts: float = 45.0
+    weather_flight_window_max_precipitation: float = 2.5
     met_no_fallback_enabled: bool = True
     met_no_user_agent: str = "flyforecast.ru/0.1(+https://flyforecast.ru;admin@example.com)"
     flight_status_dataset_path: str = "/app/data/raw/flight_status/kunashir_flight_status_hourly.csv"

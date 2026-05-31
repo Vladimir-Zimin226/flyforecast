@@ -3,7 +3,7 @@ from datetime import date, datetime
 from app.schemas import HistoricalSnapshot, WeatherSnapshot
 
 
-MODEL_VERSION = "mvp-baseline-003"
+MODEL_VERSION = "mvp-baseline-004"
 DATA_VERSION = "telegram-v2-plus-historical-board-manual-v3-2026-05-20"
 
 DISCLAIMER = (
@@ -35,6 +35,9 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
         return 0.0
 
     adjustment = 0.0
+
+    if weather.flight_window_available:
+        adjustment += 0.04
 
     if weather.wind_speed_10m is not None and weather.wind_speed_10m >= 12:
         adjustment -= 0.05
@@ -122,8 +125,24 @@ def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, ho
             factors.append(
                 f"риск тумана и низкой облачности: {risk_labels.get(weather.fog_low_cloud_risk_level, weather.fog_low_cloud_risk_level)}"
             )
+        has_flight_window = (
+            weather.flight_window_available
+            and weather.flight_window_start_hour is not None
+            and weather.flight_window_end_hour is not None
+        )
+        if has_flight_window:
+            factors.append(
+                "найдено погодное окно для рейса: "
+                f"{weather.flight_window_start_hour:02d}:00-{weather.flight_window_end_hour:02d}:00"
+            )
         if weather.visibility is not None:
-            if weather.aggregation_window_start_hour is not None and weather.aggregation_window_end_hour is not None:
+            if has_flight_window:
+                factors.append(
+                    "видимость в найденном погодном окне "
+                    f"{weather.flight_window_start_hour:02d}:00-{weather.flight_window_end_hour:02d}:00: "
+                    f"{round(weather.visibility)} м"
+                )
+            elif weather.aggregation_window_start_hour is not None and weather.aggregation_window_end_hour is not None:
                 factors.append(
                     "видимость в рабочем окне "
                     f"{weather.aggregation_window_start_hour:02d}:00-{weather.aggregation_window_end_hour:02d}:00: "

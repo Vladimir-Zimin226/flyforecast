@@ -1,6 +1,6 @@
 # MVP Baseline Model
 
-Этот документ фиксирует текущую логику прогноза `mvp-baseline-003`.
+Этот документ фиксирует текущую логику прогноза `mvp-baseline-004`.
 
 Baseline — это не обученная ML-модель. Это воспроизводимая эвристика в backend, которая даёт честную вероятностную оценку до появления и проверки ML-модели.
 
@@ -15,7 +15,7 @@ backend/app/services/predictor.py
 Текущие версии:
 
 ```text
-model_version: mvp-baseline-003
+model_version: mvp-baseline-004
 data_version: telegram-v2-plus-historical-board-manual-v3-2026-05-20
 ```
 
@@ -129,14 +129,30 @@ horizon_days <= 15
 
 Если Open-Meteo forecast недоступен, погодная поправка равна `0`.
 
-Forecast weather агрегируется по локальному рабочему окну аэропорта, а не по полным суткам:
+Forecast weather анализируется по локальному рабочему окну аэропорта, а не по полным суткам:
 
 ```text
 08:00 <= forecast_hour <= 20:00
 ```
 
 Окно задаётся через `WEATHER_FORECAST_WINDOW_START_HOUR` и `WEATHER_FORECAST_WINDOW_END_HOUR`.
-Для `visibility` используется нижний квартиль внутри окна, а не абсолютный минимум за сутки. Это снижает ложные `no` в сценарии, когда ночью или рано утром есть туман, но к дневному/вечернему окну он рассеивается.
+Внутри него baseline ищет непрерывное погодное окно для рейса. По умолчанию требуется не меньше `3` часов подряд:
+
+```text
+WEATHER_FLIGHT_WINDOW_MIN_HOURS=3
+```
+
+Час считается пригодным для такого окна, если нет явных погодных ограничителей:
+
+| Условие | Значение по умолчанию |
+| --- | ---: |
+| `visibility >= WEATHER_FLIGHT_WINDOW_MIN_VISIBILITY` | `5000 м` |
+| `cloud_cover_low <= WEATHER_FLIGHT_WINDOW_MAX_CLOUD_LOW` | `80%` |
+| `wind_gusts_10m <= WEATHER_FLIGHT_WINDOW_MAX_WIND_GUSTS` | `45 км/ч` |
+| `precipitation <= WEATHER_FLIGHT_WINDOW_MAX_PRECIPITATION` | `2.5 мм` |
+| `weather_code not in {45, 48}` | нет fog code |
+
+Если такое окно найдено, погодные признаки для решения агрегируются именно по нему. Если нет, используется всё рабочее окно `08:00-20:00`; для `visibility` в этом случае берётся нижний квартиль, а не абсолютный минимум.
 
 Текущие правила:
 
@@ -307,7 +323,7 @@ Baseline можно менять только с обновлением `model_v
 - frozen training dataset version;
 - список safe features без утечек;
 - time-based train/validation/test split;
-- сравнение с `mvp-baseline-003`;
+- сравнение с `mvp-baseline-004`;
 - Brier Score;
 - calibration curve;
 - отчет по ближнему и дальнему горизонту;

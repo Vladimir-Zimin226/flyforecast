@@ -12,6 +12,7 @@ import httpx
 from app.config import Settings, get_settings
 from app.schemas import WeatherSnapshot
 from app.services.fog_risk import (
+    FOG_WEATHER_CODES,
     calculate_dew_point_spread,
     calculate_fog_low_cloud_risk_score,
     fog_low_cloud_risk_level,
@@ -39,7 +40,7 @@ OPEN_METEO_MAX_HORIZON_DAYS = 15
 OPEN_METEO_RETRIES = 2
 OPEN_METEO_RETRY_DELAY_SECONDS = 0.8
 OPEN_METEO_CACHE_FORECAST_DAYS = OPEN_METEO_MAX_HORIZON_DAYS + 1
-OPEN_METEO_CACHE_PROVIDER = "open-meteo-operational-window-v1"
+OPEN_METEO_CACHE_PROVIDER = "open-meteo-flight-window-v1"
 
 MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
 MET_NO_MAX_HORIZON_DAYS = 9
@@ -90,21 +91,31 @@ def _float_or_none(value: object) -> float | None:
         return None
 
 
-def _build_weather_snapshot(
-    *,
-    source: str,
-    reason: str | None,
-    aggregated: dict[str, float | None],
-    extra_fog_risk_score: float = 0.0,
-    aggregation_window_start_hour: int | None = None,
-    aggregation_window_end_hour: int | None = None,
-    aggregation_window_hours: int | None = None,
-) -> WeatherSnapshot:
+def _aggregate_weather_rows(rows: list[dict[str, float | int | None]]) -> dict[str, float | None]:
+    aggregated: dict[str, float | None] = {}
+
+    for field in HOURLY_FIELDS:
+        values = [
+            float(row[field])
+            for row in rows
+            if row.get(field) is not None
+        ]
+        if field == "visibility":
+            aggregated[field] = _quantile(values, 0.25)
+        elif field == "weather_code":
+            aggregated[field] = _mode(values)
+        else:
+            aggregated[field] = _mean(values)
+
+    return aggregated
+
+
+def _fog_score_for_aggregated(aggregated: dict[str, float | None], extra_fog_risk_score: float = 0.0) -> float:
     dew_point_spread = calculate_dew_point_spread(
         aggregated.get("temperature_2m"),
         aggregated.get("dew_point_2m"),
     )
-    fog_low_cloud_risk_score = calculate_fog_low_cloud_risk_score(
+    score = calculate_fog_low_cloud_risk_score(
         visibility=aggregated.get("visibility"),
         cloud_cover_low=aggregated.get("cloud_cover_low"),
         relative_humidity_2m=aggregated.get("relative_humidity_2m"),
@@ -114,7 +125,127 @@ def _build_weather_snapshot(
         precipitation=aggregated.get("precipitation"),
         weather_code=aggregated.get("weather_code"),
     )
-    fog_low_cloud_risk_score = round(min(max(fog_low_cloud_risk_score + extra_fog_risk_score, 0.0), 1.0), 3)
+    return round(min(max(score + extra_fog_risk_score, 0.0), 1.0), 3)
+
+
+def _is_flight_opportunity_hour(row: dict[str, float | int | None], settings: Settings) -> bool:
+    visibility = row.get("visibility")
+    if visibility is not None and visibility < settings.weather_flight_window_min_visibility:
+        return False
+
+    cloud_cover_low = row.get("cloud_cover_low")
+    if cloud_cover_low is not None and cloud_cover_low > settings.weather_flight_window_max_cloud_low:
+        return False
+
+    wind_gusts = row.get("wind_gusts_10m")
+    if wind_gusts is not None and wind_gusts > settings.weather_flight_window_max_wind_gusts:
+        return False
+
+    precipitation = row.get("precipitation")
+    if precipitation is not None and precipitation > settings.weather_flight_window_max_precipitation:
+        return False
+
+    weather_code = row.get("weather_code")
+    if weather_code is not None and int(weather_code) in FOG_WEATHER_CODES:
+        return False
+
+    return True
+
+
+def _flight_window_sort_key(rows: list[dict[str, float | int | None]]) -> tuple:
+    aggregated = _aggregate_weather_rows(rows)
+    visibility = aggregated.get("visibility")
+    cloud_cover_low = aggregated.get("cloud_cover_low")
+    wind_gusts = aggregated.get("wind_gusts_10m")
+    precipitation = aggregated.get("precipitation")
+    fog_score = _fog_score_for_aggregated(aggregated)
+    return (
+        len(rows),
+        visibility if visibility is not None else 0.0,
+        -(fog_score if fog_score is not None else 1.0),
+        -(cloud_cover_low if cloud_cover_low is not None else 100.0),
+        -(wind_gusts if wind_gusts is not None else 100.0),
+        -(precipitation if precipitation is not None else 10.0),
+    )
+
+
+def _find_flight_opportunity_window(
+    rows: list[dict[str, float | int | None]],
+    settings: Settings,
+) -> list[dict[str, float | int | None]] | None:
+    min_hours = max(1, int(settings.weather_flight_window_min_hours))
+    candidates: list[list[dict[str, float | int | None]]] = []
+    current: list[dict[str, float | int | None]] = []
+
+    for row in rows:
+        if current and row.get("hour") is not None and current[-1].get("hour") is not None:
+            if int(row["hour"]) != int(current[-1]["hour"]) + 1:
+                if len(current) >= min_hours:
+                    candidates.append(current)
+                current = []
+
+        if _is_flight_opportunity_hour(row, settings):
+            current.append(row)
+        else:
+            if len(current) >= min_hours:
+                candidates.append(current)
+            current = []
+
+    if len(current) >= min_hours:
+        candidates.append(current)
+
+    if not candidates:
+        return None
+
+    return max(candidates, key=_flight_window_sort_key)
+
+
+def _flight_window_payload(
+    rows: list[dict[str, float | int | None]] | None,
+) -> dict[str, float | int | bool | str | None]:
+    if not rows:
+        return {
+            "flight_window_available": False,
+            "flight_window_start_hour": None,
+            "flight_window_end_hour": None,
+            "flight_window_hours": None,
+            "flight_window_visibility": None,
+            "flight_window_cloud_cover_low": None,
+            "flight_window_fog_low_cloud_risk_score": None,
+            "flight_window_fog_low_cloud_risk_level": None,
+        }
+
+    aggregated = _aggregate_weather_rows(rows)
+    fog_score = _fog_score_for_aggregated(aggregated)
+    return {
+        "flight_window_available": True,
+        "flight_window_start_hour": int(rows[0]["hour"]) if rows[0].get("hour") is not None else None,
+        "flight_window_end_hour": int(rows[-1]["hour"]) if rows[-1].get("hour") is not None else None,
+        "flight_window_hours": len(rows),
+        "flight_window_visibility": aggregated.get("visibility"),
+        "flight_window_cloud_cover_low": aggregated.get("cloud_cover_low"),
+        "flight_window_fog_low_cloud_risk_score": fog_score,
+        "flight_window_fog_low_cloud_risk_level": fog_low_cloud_risk_level(fog_score),
+    }
+
+
+def _build_weather_snapshot(
+    *,
+    source: str,
+    reason: str | None,
+    aggregated: dict[str, float | None],
+    extra_fog_risk_score: float = 0.0,
+    aggregation_window_start_hour: int | None = None,
+    aggregation_window_end_hour: int | None = None,
+    aggregation_window_hours: int | None = None,
+    flight_window: dict[str, float | int | bool | str | None] | None = None,
+) -> WeatherSnapshot:
+    dew_point_spread = calculate_dew_point_spread(
+        aggregated.get("temperature_2m"),
+        aggregated.get("dew_point_2m"),
+    )
+    fog_low_cloud_risk_score = _fog_score_for_aggregated(aggregated, extra_fog_risk_score)
+    flight_window = flight_window or _flight_window_payload(None)
 
     return WeatherSnapshot(
         source=source,
@@ -137,6 +268,14 @@ def _build_weather_snapshot(
         aggregation_window_start_hour=aggregation_window_start_hour,
         aggregation_window_end_hour=aggregation_window_end_hour,
         aggregation_window_hours=aggregation_window_hours,
+        flight_window_available=bool(flight_window.get("flight_window_available")),
+        flight_window_start_hour=flight_window.get("flight_window_start_hour"),
+        flight_window_end_hour=flight_window.get("flight_window_end_hour"),
+        flight_window_hours=flight_window.get("flight_window_hours"),
+        flight_window_visibility=flight_window.get("flight_window_visibility"),
+        flight_window_cloud_cover_low=flight_window.get("flight_window_cloud_cover_low"),
+        flight_window_fog_low_cloud_risk_score=flight_window.get("flight_window_fog_low_cloud_risk_score"),
+        flight_window_fog_low_cloud_risk_level=flight_window.get("flight_window_fog_low_cloud_risk_level"),
     )
 
 
@@ -176,6 +315,26 @@ def _filter_indices_to_window(
             filtered.append(index)
 
     return filtered or indices
+
+
+def _open_meteo_rows_for_indices(hourly: dict, times: list, indices: list[int]) -> list[dict[str, float | int | None]]:
+    rows: list[dict[str, float | int | None]] = []
+
+    for index in indices:
+        if index >= len(times) or not isinstance(times[index], str):
+            continue
+
+        hour = _hour_from_open_meteo_time(times[index])
+        if hour is None:
+            continue
+
+        row: dict[str, float | int | None] = {"hour": hour}
+        for field in HOURLY_FIELDS:
+            values = hourly.get(field, [])
+            row[field] = _float_or_none(values[index]) if index < len(values) else None
+        rows.append(row)
+
+    return rows
 
 
 def _connect_weather_cache(path: str) -> sqlite3.Connection:
@@ -296,27 +455,16 @@ def _open_meteo_payload_to_snapshots(payload: dict, settings: Settings) -> dict[
 
     snapshots: dict[date, WeatherSnapshot] = {}
     for target_date, indices in date_to_indices.items():
-        aggregated: dict[str, float | None] = {}
         window_indices = _filter_indices_to_window(
             times,
             indices,
             start_hour=start_hour,
             end_hour=end_hour,
         )
-
-        for field in HOURLY_FIELDS:
-            values = hourly.get(field, [])
-            day_values = [
-                float(values[i])
-                for i in window_indices
-                if i < len(values) and values[i] is not None
-            ]
-            if field == "visibility":
-                aggregated[field] = _quantile(day_values, 0.25)
-            elif field == "weather_code":
-                aggregated[field] = _mode(day_values)
-            else:
-                aggregated[field] = _mean(day_values)
+        window_rows = _open_meteo_rows_for_indices(hourly, times, window_indices)
+        flight_window_rows = _find_flight_opportunity_window(window_rows, settings)
+        aggregation_rows = flight_window_rows or window_rows
+        aggregated = _aggregate_weather_rows(aggregation_rows)
 
         snapshots[target_date] = _build_weather_snapshot(
             source="open-meteo",
@@ -325,6 +473,7 @@ def _open_meteo_payload_to_snapshots(payload: dict, settings: Settings) -> dict[
             aggregation_window_start_hour=start_hour,
             aggregation_window_end_hour=end_hour,
             aggregation_window_hours=len(window_indices),
+            flight_window=_flight_window_payload(flight_window_rows),
         )
 
     return snapshots
@@ -421,6 +570,7 @@ def _met_no_payload_to_snapshot(
         wind_gusts = _float_or_none(instant.get("wind_speed_of_gust"))
 
         row = {
+            "hour": local_datetime.hour,
             "temperature_2m": _float_or_none(instant.get("air_temperature")),
             "relative_humidity_2m": _float_or_none(instant.get("relative_humidity")),
             "dew_point_2m": _float_or_none(instant.get("dew_point_temperature")),
@@ -440,24 +590,13 @@ def _met_no_payload_to_snapshot(
     if not rows:
         return None
 
-    aggregated = {
-        field: _mean([row[field] for row in rows if row.get(field) is not None])
-        for field in [
-            "temperature_2m",
-            "relative_humidity_2m",
-            "dew_point_2m",
-            "pressure_msl",
-            "cloud_cover",
-            "cloud_cover_low",
-            "precipitation",
-            "wind_speed_10m",
-            "wind_gusts_10m",
-        ]
-    }
+    flight_window_rows = _find_flight_opportunity_window(rows, settings)
+    aggregation_rows = flight_window_rows or rows
+    aggregated = _aggregate_weather_rows(aggregation_rows)
     aggregated["visibility"] = None
     aggregated["weather_code"] = None
 
-    fog_area_values = [row["fog_area_fraction"] for row in rows if row.get("fog_area_fraction") is not None]
+    fog_area_values = [row["fog_area_fraction"] for row in aggregation_rows if row.get("fog_area_fraction") is not None]
     fog_area_fraction = max(fog_area_values) if fog_area_values else None
 
     return _build_weather_snapshot(
@@ -468,6 +607,7 @@ def _met_no_payload_to_snapshot(
         aggregation_window_start_hour=start_hour,
         aggregation_window_end_hour=end_hour,
         aggregation_window_hours=len(rows),
+        flight_window=_flight_window_payload(flight_window_rows),
     )
 
 

@@ -50,7 +50,7 @@
 - endpoint прогноза `/predict?date=YYYY-MM-DD`;
 - Open-Meteo forecast API с fog/low-cloud признаками для Менделеево;
 - GigaChat API для пользовательского объяснения;
-- baseline-расчёт вероятности `mvp-baseline-003`;
+- baseline-расчёт вероятности `mvp-baseline-004`;
 - legacy JSONL-логирование прогнозов для совместимости с monitor/pipeline;
 - hourly collector статусов рейсов по табло аэропорта;
 - forecast monitor для ledger прогнозов, фактов и метрик качества;
@@ -208,7 +208,7 @@ docs/
 └── privacy-policy/
 ```
 
-- `docs/baseline_model.md` — как работает текущий `mvp-baseline-003`.
+- `docs/baseline_model.md` — как работает текущий `mvp-baseline-004`.
 - `docs/business_analysis.md` — бизнес-анализ MVP.
 - `docs/dataset_preparation.md` — отчёт по подготовке датасета для ML-задачи.
 - `docs/data_experiments.md` — история источников, датасетов, сборщиков и ML-data экспериментов.
@@ -460,7 +460,7 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 Правила доступности погоды:
 
 - на горизонте `0-15` дней backend использует forecast weather snapshot: fresh Open-Meteo cache, live Open-Meteo, stale Open-Meteo cache, затем MET Norway fallback для `0-9` дней;
-- forecast weather агрегируется в рабочем окне аэропорта, по умолчанию `08:00-20:00`, чтобы ночной/ранний туман не ломал прогноз на весь день;
+- forecast weather анализируется в рабочем окне аэропорта, по умолчанию `08:00-20:00`; внутри него backend ищет непрерывное погодное окно для рейса, по умолчанию от 3 часов, чтобы утренний туман не ломал прогноз, если днём или вечером появляется рабочий просвет;
 - если все погодные слои недоступны, прогноз не строится и пользователь получает понятное предупреждение;
 - на горизонте `0-15` дней weather snapshot дополнительно содержит `visibility`, `cloud_cover_low`, `weather_code`, `dew_point_spread` и `fog_low_cloud_risk_*`;
 - MET Norway fallback не содержит прямой `visibility`, поэтому fog-risk в этом режиме считается по доступным proxy-признакам;

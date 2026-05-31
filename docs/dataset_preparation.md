@@ -707,7 +707,7 @@ Brier Score
 
 Сравнивать ML нужно минимум с:
 
-- текущим `mvp-baseline-003`, описанным в `docs/baseline_model.md`;
+- текущим `mvp-baseline-004`, описанным в `docs/baseline_model.md`;
 - seasonal baseline по месяцу/декаде;
 - constant baseline по train completed rate.
 
@@ -754,7 +754,7 @@ ML-модель можно считать полезной только если
 1. Зафиксировать safe feature list.
 2. Сформировать chronological train/validation/test split.
 3. Обучить Logistic Regression как первый ML baseline.
-4. Сравнить с `mvp-baseline-003` и seasonal baseline.
+4. Сравнить с `mvp-baseline-004` и seasonal baseline.
 5. Оценить Brier Score, calibration и ошибки по отменам.
 6. После этого решить, использовать ML как основную модель, дополнительный слой или оставить baseline для части горизонтов.
 
@@ -777,7 +777,7 @@ ML-модель можно считать полезной только если
 2. Baseline обновлён до версии:
 
 ```text
-mvp-baseline-003
+mvp-baseline-004
 ```
 
 Новая версия использует risk score тумана/низкой облачности как дополнительную отрицательную погодную поправку для горизонта, где доступен Open-Meteo forecast.
@@ -887,7 +887,7 @@ python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
 3. Проверить корреляции новых fog-risk признаков с target без temporal leakage.
 4. Сделать chronological train/validation/test split.
 5. Сравнить:
-   - `mvp-baseline-003`;
+   - `mvp-baseline-004`;
    - seasonal baseline;
    - fog-risk baseline;
    - Logistic Regression.

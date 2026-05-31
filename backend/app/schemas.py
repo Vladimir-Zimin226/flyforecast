@@ -191,6 +191,14 @@ class WeatherSnapshot(BaseModel):
     aggregation_window_start_hour: int | None = None
     aggregation_window_end_hour: int | None = None
     aggregation_window_hours: int | None = None
+    flight_window_available: bool | None = None
+    flight_window_start_hour: int | None = None
+    flight_window_end_hour: int | None = None
+    flight_window_hours: int | None = None
+    flight_window_visibility: float | None = None
+    flight_window_cloud_cover_low: float | None = None
+    flight_window_fog_low_cloud_risk_score: float | None = None
+    flight_window_fog_low_cloud_risk_level: str | None = None
 
 
 class HistoricalSnapshot(BaseModel):

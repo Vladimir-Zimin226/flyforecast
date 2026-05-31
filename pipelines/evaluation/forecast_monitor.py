@@ -127,6 +127,14 @@ def init_db(conn: sqlite3.Connection) -> None:
             aggregation_window_start_hour INTEGER,
             aggregation_window_end_hour INTEGER,
             aggregation_window_hours INTEGER,
+            flight_window_available INTEGER,
+            flight_window_start_hour INTEGER,
+            flight_window_end_hour INTEGER,
+            flight_window_hours INTEGER,
+            flight_window_visibility REAL,
+            flight_window_cloud_cover_low REAL,
+            flight_window_fog_low_cloud_risk_score REAL,
+            flight_window_fog_low_cloud_risk_level TEXT,
             history_source TEXT NOT NULL,
             similar_days_count INTEGER NOT NULL,
             completed_count INTEGER NOT NULL,
@@ -198,6 +206,14 @@ def ensure_prediction_columns(conn: sqlite3.Connection) -> None:
         "aggregation_window_start_hour": "INTEGER",
         "aggregation_window_end_hour": "INTEGER",
         "aggregation_window_hours": "INTEGER",
+        "flight_window_available": "INTEGER",
+        "flight_window_start_hour": "INTEGER",
+        "flight_window_end_hour": "INTEGER",
+        "flight_window_hours": "INTEGER",
+        "flight_window_visibility": "REAL",
+        "flight_window_cloud_cover_low": "REAL",
+        "flight_window_fog_low_cloud_risk_score": "REAL",
+        "flight_window_fog_low_cloud_risk_level": "TEXT",
     }
 
     for column, definition in columns.items():
@@ -294,10 +310,13 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
                 wind_speed_10m, wind_gusts_10m, weather_code, visibility,
                 fog_low_cloud_risk_score, fog_low_cloud_risk_level,
                 aggregation_window_start_hour, aggregation_window_end_hour, aggregation_window_hours,
+                flight_window_available, flight_window_start_hour, flight_window_end_hour,
+                flight_window_hours, flight_window_visibility, flight_window_cloud_cover_low,
+                flight_window_fog_low_cloud_risk_score, flight_window_fog_low_cloud_risk_level,
                 history_source, similar_days_count, completed_count, cancelled_count,
                 historical_probability_flight, month_probability_flight, decade_probability_flight
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -330,6 +349,14 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
                 weather.aggregation_window_start_hour,
                 weather.aggregation_window_end_hour,
                 weather.aggregation_window_hours,
+                int(weather.flight_window_available) if weather.flight_window_available is not None else None,
+                weather.flight_window_start_hour,
+                weather.flight_window_end_hour,
+                weather.flight_window_hours,
+                weather.flight_window_visibility,
+                weather.flight_window_cloud_cover_low,
+                weather.flight_window_fog_low_cloud_risk_score,
+                weather.flight_window_fog_low_cloud_risk_level,
                 history.source,
                 history.similar_days_count,
                 history.completed_count,

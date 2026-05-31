@@ -234,7 +234,9 @@ async def predict(
             "temperature_2m=%s humidity=%s dew_point_2m=%s pressure_msl=%s "
             "cloud_cover=%s cloud_cover_low=%s visibility=%s weather_code=%s "
             "dew_point_spread=%s fog_low_cloud_risk=%s precipitation=%s "
-            "wind_speed_10m=%s wind_gusts_10m=%s aggregation_window=%s-%s hours=%s"
+            "wind_speed_10m=%s wind_gusts_10m=%s aggregation_window=%s-%s hours=%s "
+            "flight_window_available=%s flight_window=%s-%s flight_window_hours=%s "
+            "flight_window_visibility=%s flight_window_fog_risk=%s"
         ),
         request_id,
         target_date.isoformat(),
@@ -257,6 +259,12 @@ async def predict(
         weather.aggregation_window_start_hour,
         weather.aggregation_window_end_hour,
         weather.aggregation_window_hours,
+        weather.flight_window_available,
+        weather.flight_window_start_hour,
+        weather.flight_window_end_hour,
+        weather.flight_window_hours,
+        weather.flight_window_visibility,
+        weather.flight_window_fog_low_cloud_risk_level,
     )
 
     if horizon_days <= OPEN_METEO_MAX_HORIZON_DAYS and not weather.available:
@@ -438,6 +446,14 @@ def log_prediction(
         "aggregation_window_start_hour": result.weather.aggregation_window_start_hour,
         "aggregation_window_end_hour": result.weather.aggregation_window_end_hour,
         "aggregation_window_hours": result.weather.aggregation_window_hours,
+        "flight_window_available": result.weather.flight_window_available,
+        "flight_window_start_hour": result.weather.flight_window_start_hour,
+        "flight_window_end_hour": result.weather.flight_window_end_hour,
+        "flight_window_hours": result.weather.flight_window_hours,
+        "flight_window_visibility": result.weather.flight_window_visibility,
+        "flight_window_cloud_cover_low": result.weather.flight_window_cloud_cover_low,
+        "flight_window_fog_low_cloud_risk_score": result.weather.flight_window_fog_low_cloud_risk_score,
+        "flight_window_fog_low_cloud_risk_level": result.weather.flight_window_fog_low_cloud_risk_level,
         "wind_speed_10m": result.weather.wind_speed_10m,
         "wind_gusts_10m": result.weather.wind_gusts_10m,
         "relative_humidity_2m": result.weather.relative_humidity_2m,
