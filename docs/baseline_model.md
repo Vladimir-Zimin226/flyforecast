@@ -1,6 +1,6 @@
 # MVP Baseline Model
 
-Этот документ фиксирует текущую логику прогноза `mvp-baseline-004`.
+Этот документ фиксирует текущую логику прогноза `mvp-baseline-005`.
 
 Baseline — это не обученная ML-модель. Это воспроизводимая эвристика в backend, которая даёт честную вероятностную оценку до появления и проверки ML-модели.
 
@@ -15,7 +15,7 @@ backend/app/services/predictor.py
 Текущие версии:
 
 ```text
-model_version: mvp-baseline-004
+model_version: mvp-baseline-005
 data_version: telegram-v2-plus-historical-board-manual-v3-2026-05-20
 ```
 
@@ -146,11 +146,11 @@ WEATHER_FLIGHT_WINDOW_MIN_HOURS=3
 
 | Условие | Значение по умолчанию |
 | --- | ---: |
-| `visibility >= WEATHER_FLIGHT_WINDOW_MIN_VISIBILITY` | `5000 м` |
-| `cloud_cover_low <= WEATHER_FLIGHT_WINDOW_MAX_CLOUD_LOW` | `80%` |
-| `wind_gusts_10m <= WEATHER_FLIGHT_WINDOW_MAX_WIND_GUSTS` | `45 км/ч` |
+| `wind_gusts_10m <= WEATHER_FLIGHT_WINDOW_MAX_WIND_GUSTS` | `65 км/ч` |
 | `precipitation <= WEATHER_FLIGHT_WINDOW_MAX_PRECIPITATION` | `2.5 мм` |
 | `weather_code not in {45, 48}` | нет fog code |
+
+Низкая `visibility` из Open-Meteo сама по себе больше не удаляет погодное окно, если нет WMO-кода тумана `{45, 48}`. Причина: для Менделеево поле видимости в model/forecast-сетке может давать экстремально низкие значения без подтверждающего fog-кода и уже показало ложные стоп-сигналы на фактически выполненных рейсах.
 
 Если такое окно найдено, погодные признаки для решения агрегируются именно по нему. Если нет, используется всё рабочее окно `08:00-20:00`; для `visibility` в этом случае берётся нижний квартиль, а не абсолютный минимум.
 
@@ -158,16 +158,29 @@ WEATHER_FLIGHT_WINDOW_MIN_HOURS=3
 
 | Условие | Поправка |
 | --- | ---: |
-| `wind_speed_10m >= 12` | `-0.05` |
-| `wind_gusts_10m >= 18` | `-0.07` |
-| `relative_humidity_2m >= 92` | `-0.04` |
-| `cloud_cover >= 85` | `-0.03` |
-| `cloud_cover_low >= 80` | `-0.05` |
-| `visibility <= 3000` | `-0.06` |
-| `dew_point_spread <= 2` | `-0.04` |
-| `fog_low_cloud_risk_level == medium` | `-0.04` |
-| `fog_low_cloud_risk_level == high` | `-0.09` |
+| найдено погодное окно для рейса | `+0.12` |
+| погодное окно для рейса не найдено | `-0.04` |
+| `wind_speed_10m >= 30` | `-0.03` |
+| `wind_gusts_10m >= 55` | `-0.03` |
+| `wind_gusts_10m >= 65` | `-0.05` |
+| `relative_humidity_2m >= 92` | `-0.01` |
+| `relative_humidity_2m >= 97` | `-0.03` |
+| `cloud_cover >= 95` | `-0.01` |
+| `cloud_cover_low >= 80` | `-0.01` |
+| `cloud_cover_low >= 95` | `-0.02` |
+| `visibility <= 6000` | `-0.03` |
+| `visibility <= 3000` без fog-кода | `-0.02` |
+| `visibility <= 3000` с fog-кодом | `-0.08` |
+| `visibility <= 1000` без fog-кода | `-0.03` |
+| `visibility <= 1000` с fog-кодом | `-0.12` |
+| `dew_point_spread <= 2` | `-0.015` |
+| `dew_point_spread <= 1` | `-0.03` |
+| `fog_low_cloud_risk_level == medium` | `-0.015` |
+| `fog_low_cloud_risk_level == high` без явной низкой видимости/кода тумана | `-0.03` |
+| `fog_low_cloud_risk_level == high` с явной низкой видимостью/кодом тумана | `-0.08` |
 | `precipitation >= 3` | `-0.03` |
+
+Если найдено погодное окно и нет кода тумана, итоговая погодная поправка не опускается ниже `+0.04`. Это нужно, чтобы мягкие прокси вроде высокой влажности, процента низкой облачности или неподтверждённой модельной видимости не отменяли само наличие пригодного окна.
 
 Итоговая вероятность ограничивается диапазоном:
 
@@ -323,7 +336,7 @@ Baseline можно менять только с обновлением `model_v
 - frozen training dataset version;
 - список safe features без утечек;
 - time-based train/validation/test split;
-- сравнение с `mvp-baseline-004`;
+- сравнение с `mvp-baseline-005`;
 - Brier Score;
 - calibration curve;
 - отчет по ближнему и дальнему горизонту;

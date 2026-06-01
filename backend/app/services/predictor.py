@@ -3,7 +3,7 @@ from datetime import date, datetime
 from app.schemas import HistoricalSnapshot, WeatherSnapshot
 
 
-MODEL_VERSION = "mvp-baseline-004"
+MODEL_VERSION = "mvp-baseline-005"
 DATA_VERSION = "telegram-v2-plus-historical-board-manual-v3-2026-05-20"
 
 DISCLAIMER = (
@@ -35,38 +35,66 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
         return 0.0
 
     adjustment = 0.0
+    explicit_fog_code = weather.weather_code is not None and int(weather.weather_code) in {45, 48}
+    severe_visibility_risk = explicit_fog_code
 
     if weather.flight_window_available:
-        adjustment += 0.04
-
-    if weather.wind_speed_10m is not None and weather.wind_speed_10m >= 12:
-        adjustment -= 0.05
-
-    if weather.wind_gusts_10m is not None and weather.wind_gusts_10m >= 18:
-        adjustment -= 0.07
-
-    if weather.relative_humidity_2m is not None and weather.relative_humidity_2m >= 92:
+        adjustment += 0.12
+    else:
         adjustment -= 0.04
 
-    if weather.cloud_cover is not None and weather.cloud_cover >= 85:
+    if weather.wind_speed_10m is not None and weather.wind_speed_10m >= 30:
         adjustment -= 0.03
 
-    if weather.cloud_cover_low is not None and weather.cloud_cover_low >= 80:
-        adjustment -= 0.05
+    if weather.wind_gusts_10m is not None:
+        if weather.wind_gusts_10m >= 65:
+            adjustment -= 0.05
+        elif weather.wind_gusts_10m >= 55:
+            adjustment -= 0.03
 
-    if weather.visibility is not None and weather.visibility <= 3000:
-        adjustment -= 0.06
+    if weather.relative_humidity_2m is not None:
+        if weather.relative_humidity_2m >= 97:
+            adjustment -= 0.03
+        elif weather.relative_humidity_2m >= 92:
+            adjustment -= 0.01
 
-    if weather.dew_point_spread is not None and weather.dew_point_spread <= 2:
-        adjustment -= 0.04
+    if weather.cloud_cover is not None and weather.cloud_cover >= 95:
+        adjustment -= 0.01
+
+    if weather.cloud_cover_low is not None:
+        if weather.cloud_cover_low >= 95:
+            adjustment -= 0.02
+        elif weather.cloud_cover_low >= 80:
+            adjustment -= 0.01
+
+    if weather.visibility is not None:
+        if weather.visibility <= 1000 and explicit_fog_code:
+            adjustment -= 0.12
+        elif weather.visibility <= 1000:
+            adjustment -= 0.03
+        elif weather.visibility <= 3000 and explicit_fog_code:
+            adjustment -= 0.08
+        elif weather.visibility <= 3000:
+            adjustment -= 0.02
+        elif weather.visibility <= 6000:
+            adjustment -= 0.03
+
+    if weather.dew_point_spread is not None:
+        if weather.dew_point_spread <= 1:
+            adjustment -= 0.03
+        elif weather.dew_point_spread <= 2:
+            adjustment -= 0.015
 
     if weather.fog_low_cloud_risk_level == "medium":
-        adjustment -= 0.04
+        adjustment -= 0.015
     elif weather.fog_low_cloud_risk_level == "high":
-        adjustment -= 0.09
+        adjustment -= 0.08 if severe_visibility_risk else 0.03
 
     if weather.precipitation is not None and weather.precipitation >= 3:
         adjustment -= 0.03
+
+    if weather.flight_window_available and not severe_visibility_risk and adjustment < 0.04:
+        adjustment = 0.04
 
     return adjustment
 

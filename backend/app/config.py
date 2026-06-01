@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     weather_flight_window_min_hours: int = 3
     weather_flight_window_min_visibility: float = 5000.0
     weather_flight_window_max_cloud_low: float = 80.0
-    weather_flight_window_max_wind_gusts: float = 45.0
+    weather_flight_window_max_wind_gusts: float = 65.0
     weather_flight_window_max_precipitation: float = 2.5
     met_no_fallback_enabled: bool = True
     met_no_user_agent: str = "flyforecast.ru/0.1(+https://flyforecast.ru;admin@example.com)"
