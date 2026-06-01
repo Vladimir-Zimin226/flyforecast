@@ -153,14 +153,36 @@ Hourly collector обновляет текущие наблюдения прим
 | Historical sources v3 | `289` evidence rows |
 | Hourly board snapshot | `1030` rows |
 | Dataset v2 | `699` binary days |
-| Dataset v3 | `759` binary days |
-| Training dataset v1 | `759` rows, `90` columns |
-| Weather cache | `1518` rows: 759 дней * 2 точки |
+| Dataset v3 | `761` binary days |
+| Training dataset v1 | `761` rows, `106` columns |
+| Weather cache | `1522` rows: 761 день * 2 точки |
 
 Период `training_dataset_v1.csv`:
 
 ```text
-2017-12-13 -> 2026-05-20
+2017-12-13 -> 2026-05-26
+```
+
+Код, которым проверяется объём и период итогового датасета:
+
+```python
+from pathlib import Path
+import pandas as pd
+
+root = Path(".")
+training = pd.read_csv(
+    root / "data/processed/training_dataset_v1.csv",
+    parse_dates=["date"],
+)
+
+summary = {
+    "rows": len(training),
+    "columns": training.shape[1],
+    "date_min": training["date"].min().date(),
+    "date_max": training["date"].max().date(),
+    "target_counts": training["is_flight_completed"].value_counts().to_dict(),
+}
+summary
 ```
 
 Объём достаточен для:
@@ -183,7 +205,7 @@ Hourly collector обновляет текущие наблюдения прим
 Желательно добавить:
 
 - больше официальных historical outcomes из табло/новостей;
-- фактические статусы рейсов после 2026-05-20 через hourly collector;
+- фактические статусы рейсов после 2026-05-26 через hourly collector;
 - отдельные признаки по расписанию и номеру рейса;
 - airport operational data, если появится легальный источник;
 - более точные погодные признаки в окне времени рейса;
@@ -205,8 +227,8 @@ data/processed/training_dataset_v1.csv
 Размер:
 
 ```text
-759 строк
-90 колонок
+761 строка
+106 колонок
 ```
 
 Целевая переменная:
@@ -219,10 +241,27 @@ is_flight_completed
 
 | Класс | Значение | Количество | Доля |
 | --- | --- | ---: | ---: |
-| выполнен | `1` | `411` | `54.2%` |
-| отменён/не выполнен | `0` | `348` | `45.8%` |
+| выполнен | `1` | `411` | `54.0%` |
+| отменён/не выполнен | `0` | `350` | `46.0%` |
 
 Дисбаланс умеренный. Редких классов в финальной binary target нет.
+
+Код расчёта распределения классов:
+
+```python
+target_distribution = (
+    training["is_flight_completed"]
+    .value_counts()
+    .rename_axis("is_flight_completed")
+    .reset_index(name="count")
+)
+target_distribution["share"] = (
+    target_distribution["count"] / target_distribution["count"].sum()
+)
+target_distribution
+```
+
+![Распределение целевой переменной](assets/dataset_preparation/class_balance.png)
 
 ### Raw/interim классы
 
@@ -268,23 +307,41 @@ is_flight_completed
 
 | Поле | Доля пропусков |
 | --- | ---: |
-| `khomutovo_visibility_min` | `100%` |
-| `khomutovo_visibility_mean` | `100%` |
-| `mendeleyevo_visibility_min` | `100%` |
-| `mendeleyevo_visibility_mean` | `100%` |
-| `same_decade_past_completed_rate` | `4.87%` |
+| `khomutovo_visibility_min` | `41.39%` |
+| `khomutovo_visibility_mean` | `41.39%` |
+| `mendeleyevo_visibility_min` | `41.39%` |
+| `mendeleyevo_visibility_mean` | `41.39%` |
+| `same_decade_past_completed_rate` | `4.86%` |
 | `same_month_past_completed_rate` | `1.58%` |
 | `prev_30_completed_rate` | `0.66%` |
 | `prev_14_completed_rate` | `0.40%` |
+| `days_since_last_cancelled` | `0.13%` |
+| `prev_1_completed` | `0.13%` |
 | `prev_7_cancelled_count` | `0.13%` |
 | `prev_3_cancelled_count` | `0.13%` |
 
 Вывод:
 
-- historical visibility может оставаться пустой в Open-Meteo Archive, поэтому ее нельзя считать главным историческим признаком;
+- historical visibility заполнена только для части периода, поэтому ее нельзя считать стабильным единственным историческим признаком;
 - для тумана используем proxy-признаки: влажность, dew point spread, низкая облачность, weather code, осадки и ветер;
 - rolling-пропуски в начале временного ряда нормальны и могут заполняться медианой/нейтральным значением;
 - target и дата заполнены полностью.
+
+Код расчёта пропусков:
+
+```python
+missing_top = (
+    training.isna()
+    .mean()
+    .sort_values(ascending=False)
+    .head(12)
+    .rename("missing_share")
+    .reset_index(names="feature")
+)
+missing_top
+```
+
+![Топ признаков по доле пропусков](assets/dataset_preparation/missingness_top10.png)
 
 ### Длины текстов
 
@@ -374,8 +431,22 @@ data/interim/flight_status/needs_manual_review_v3.csv
 - сезонность сильная: январь хуже мая/июля;
 - recent cancellation rolling features дают сильный сигнал, но нужно следить за отсутствием утечки;
 - данные по годам неоднородны: поздние годы содержат больше подтверждений из новых источников;
-- historical visibility отсутствует полностью в текущем Open-Meteo Archive, но добавлен отдельный fog-risk dataset на proxy-признаках;
+- historical visibility доступна только с части временного ряда, но добавлен отдельный fog-risk dataset на proxy-признаках;
 - `reason_class` и `message_count` нельзя использовать в модели как признаки, потому что это post-fact metadata.
+
+Код проверки drift по годам:
+
+```python
+completion_by_year = (
+    training.assign(year_from_date=training["date"].dt.year)
+    .groupby("year_from_date")["is_flight_completed"]
+    .agg(days="size", completion_rate="mean")
+    .reset_index()
+)
+completion_by_year
+```
+
+![Temporal drift по годам](assets/dataset_preparation/target_drift_by_year.png)
 
 ---
 
@@ -415,11 +486,34 @@ source: telegram_manual_review_2026_05
 
 Для первого binary classifier разметки достаточно:
 
-- `759` объектов;
+- `761` объект;
 - два класса представлены близко к балансу;
 - нет редкого target-класса.
 
 Для сложных моделей и отдельных причин отмен разметки недостаточно. `reason_class` сильно неоднороден и не должен становиться самостоятельной целевой переменной в текущей версии.
+
+Код для проверки уверенности разметки и крупнейших `reason_class`:
+
+```python
+label_confidence = (
+    training["label_confidence"]
+    .fillna("missing")
+    .value_counts()
+    .rename_axis("label_confidence")
+    .reset_index(name="days")
+)
+
+reason_classes = (
+    training["reason_class"]
+    .fillna("missing")
+    .value_counts()
+    .head(8)
+    .rename_axis("reason_class")
+    .reset_index(name="days")
+)
+```
+
+![Проверка качества разметки](assets/dataset_preparation/label_quality.png)
 
 ### Ошибки и шум
 
@@ -557,7 +651,7 @@ source: telegram_manual_review_2026_05
 | Повторяющиеся Telegram texts | raw Telegram | не удалять на raw stage, контролировать при NLP split |
 | `unknown/planned/delayed` статусы | interim labels | исключать из binary target без review |
 | `combined/disrupted` | board/historical evidence | ручная логика: если нет completed evidence за дату, считать cancelled только после проверки |
-| Полностью пустой historical visibility | training v1/fog-risk | не использовать как обязательный признак; опираться на proxy fog-risk |
+| Частично заполненный historical visibility | training v1/fog-risk | использовать с missing indicator или сравнивать с no-visibility feature set |
 | Rolling NaN в начале ряда | training v1 | заполнить медианой/нейтральным значением внутри train pipeline |
 | Excel/CSV артефакты `;date`, trailing `;;;;` | локальный v3 CSV | чистка заголовков при чтении |
 | Смешанные reason classes | `reason_class` | не использовать как target; унифицировать для аналитики |
@@ -581,7 +675,7 @@ source: telegram_manual_review_2026_05
    - `event_date_sources`;
    - `data_version`;
    - `training_data_version`;
-   - `visibility_*`, если они полностью пустые в historical archive.
+   - `visibility_*` без проверки coverage и missing indicator.
 5. Категориальные признаки (`season`) закодировать one-hot или заменить числовыми циклическими признаками.
 6. Numeric NaN заполнить только по train statistics.
 7. Масштабировать признаки для Logistic Regression.
@@ -599,15 +693,42 @@ source: telegram_manual_review_2026_05
 
 ### Рекомендуемое разбиение сейчас
 
-Для текущих `759` строк рекомендуется chronological 80/10/10:
+Для текущих `761` строки рекомендуется chronological 80/10/10:
 
 | Split | Даты | Строк | Классы | Доля completed |
 | --- | --- | ---: | --- | ---: |
-| train | `2017-12-13` — `2023-07-04` | `607` | `{1: 371, 0: 236}` | `61.1%` |
-| validation | `2023-07-12` — `2024-07-12` | `76` | `{1: 17, 0: 59}` | `22.4%` |
-| test | `2024-07-30` — `2026-05-20` | `76` | `{1: 23, 0: 53}` | `30.3%` |
+| train | `2017-12-13` — `2023-07-12` | `608` | `{1: 372, 0: 236}` | `61.2%` |
+| validation | `2023-07-14` — `2024-07-30` | `76` | `{1: 16, 0: 60}` | `21.1%` |
+| test | `2024-08-01` — `2026-05-26` | `77` | `{1: 23, 0: 54}` | `29.9%` |
 
 Это разбиение не идеально сбалансировано, но честно показывает temporal drift. Именно такой drift модель должна выдерживать в реальном использовании.
+
+Код формирования chronological split:
+
+```python
+df = training.sort_values("date").reset_index(drop=True)
+n = len(df)
+train_end = int(n * 0.80)
+valid_end = int(n * 0.90)
+
+df["split"] = "test"
+df.loc[: train_end - 1, "split"] = "train"
+df.loc[train_end : valid_end - 1, "split"] = "validation"
+
+split_summary = (
+    df.groupby("split", sort=False)
+    .agg(
+        start=("date", "min"),
+        end=("date", "max"),
+        rows=("date", "size"),
+        completed=("is_flight_completed", "sum"),
+        completion_rate=("is_flight_completed", "mean"),
+    )
+)
+split_summary
+```
+
+![Chronological split и drift target](assets/dataset_preparation/chronological_split_drift.png)
 
 Дополнительно можно вести rolling-origin validation:
 
@@ -707,7 +828,7 @@ Brier Score
 
 Сравнивать ML нужно минимум с:
 
-- текущим `mvp-baseline-004`, описанным в `docs/baseline_model.md`;
+- актуальным production baseline, описанным в `docs/baseline_model.md`;
 - seasonal baseline по месяцу/декаде;
 - constant baseline по train completed rate.
 
@@ -746,7 +867,7 @@ ML-модель можно считать полезной только если
 - есть temporal drift;
 - часть historical labels получена из неофициального Telegram-источника;
 - reason classes шумные и не готовы как target;
-- historical visibility-признаки пустые, но fog-risk proxy закрывает часть проблемы через низкую облачность, влажность и dew point spread;
+- historical visibility-признаки заполнены только для части периода, но fog-risk proxy закрывает часть проблемы через низкую облачность, влажность и dew point spread;
 - для дальнего горизонта нет forecast weather.
 
 Дальнейший план:
@@ -754,7 +875,7 @@ ML-модель можно считать полезной только если
 1. Зафиксировать safe feature list.
 2. Сформировать chronological train/validation/test split.
 3. Обучить Logistic Regression как первый ML baseline.
-4. Сравнить с `mvp-baseline-004` и seasonal baseline.
+4. Сравнить с актуальным production baseline и seasonal baseline.
 5. Оценить Brier Score, calibration и ошибки по отменам.
 6. После этого решить, использовать ML как основную модель, дополнительный слой или оставить baseline для части горизонтов.
 
@@ -862,6 +983,26 @@ python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
 | `medium` | `167` | `0.5030` |
 | `low` | `301` | `0.7043` |
 
+Код расчёта связи fog-risk proxy с target:
+
+```python
+fog = pd.read_csv(
+    "data/processed/mendeleyevo_fog_risk_dataset.csv",
+    parse_dates=["date"],
+)
+fog_labeled = fog[fog["is_flight_completed"].isin([0, 1])]
+
+fog_summary = (
+    fog_labeled.groupby("fog_low_cloud_risk_level")["is_flight_completed"]
+    .agg(days="size", completion_rate="mean")
+    .reindex(["low", "medium", "high"])
+    .reset_index()
+)
+fog_summary
+```
+
+![Связь fog-risk proxy с фактом выполнения рейса](assets/dataset_preparation/fog_risk_completion_rate.png)
+
 Дополнительно по buckets минимальной visibility на размеченных днях с доступной видимостью:
 
 | Visibility bucket | Дней | Completion rate |
@@ -887,7 +1028,7 @@ python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
 3. Проверить корреляции новых fog-risk признаков с target без temporal leakage.
 4. Сделать chronological train/validation/test split.
 5. Сравнить:
-   - `mvp-baseline-004`;
+   - актуальный production baseline;
    - seasonal baseline;
    - fog-risk baseline;
    - Logistic Regression.
