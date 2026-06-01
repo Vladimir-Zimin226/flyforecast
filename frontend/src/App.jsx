@@ -81,6 +81,10 @@ function probabilityPercent(value) {
   return Math.round(value * 100);
 }
 
+function nullableProbabilityPercent(value) {
+  return value === null || value === undefined ? "нет данных" : `${probabilityPercent(value)}%`;
+}
+
 function decisionLabel(decision) {
   return decision === "yes" ? "Да" : "Нет";
 }
@@ -1233,32 +1237,34 @@ export default function App() {
                     <span>Последний запуск: {formatDateTime(adminServices.forecast_monitor.health.last_seen_at)}</span>
                     <span>Запусков: {adminServices.forecast_monitor.total_runs}</span>
                     <span>Оценено: {adminServices.forecast_monitor.total_evaluations}</span>
-                    <span>Угадал: {adminServices.forecast_monitor.total_hits}</span>
-                    <span>Ошибся: {adminServices.forecast_monitor.total_misses}</span>
+                    <span>Текущая логика: {adminServices.forecast_monitor.recalculated_model_version || "нет данных"}</span>
+                    <span>Ledger accuracy: {nullableProbabilityPercent(adminServices.forecast_monitor.accuracy)}</span>
                     <span>Ждет факт: {adminServices.forecast_monitor.total_pending}</span>
                   </div>
                   <div className="service-summary-grid" aria-label="Сводка фоновых прогнозов">
                     <div>
-                      <span>Точность</span>
-                      <strong>
-                        {adminServices.forecast_monitor.accuracy === null
-                          ? "нет данных"
-                          : `${Math.round(adminServices.forecast_monitor.accuracy * 100)}%`}
-                      </strong>
+                      <span>Точность текущей логики</span>
+                      <strong>{nullableProbabilityPercent(adminServices.forecast_monitor.recalculated_accuracy)}</strong>
                     </div>
                     <div>
                       <span>Угадал</span>
-                      <strong>{adminServices.forecast_monitor.total_hits}</strong>
+                      <strong>{adminServices.forecast_monitor.recalculated_total_hits}</strong>
                     </div>
                     <div>
                       <span>Ошибся</span>
-                      <strong>{adminServices.forecast_monitor.total_misses}</strong>
+                      <strong>{adminServices.forecast_monitor.recalculated_total_misses}</strong>
                     </div>
                     <div>
                       <span>Ожидает факт</span>
                       <strong>{adminServices.forecast_monitor.total_pending}</strong>
                     </div>
                   </div>
+                  {!adminServices.forecast_monitor.recalculated_metrics_available && (
+                    <div className="service-run-summary">
+                      <strong>Пересчёт текущей логики недоступен</strong>
+                      <p>{adminServices.forecast_monitor.recalculated_metrics_reason}</p>
+                    </div>
+                  )}
                   {adminServices.forecast_monitor.latest_run && (
                     <div className="service-run-summary">
                       <strong>Последний набор прогнозов</strong>

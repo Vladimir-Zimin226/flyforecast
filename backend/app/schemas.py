@@ -145,6 +145,15 @@ class ForecastMonitorStatus(BaseModel):
     total_misses: int = 0
     total_pending: int = 0
     accuracy: float | None = None
+    recalculated_model_version: str | None = None
+    recalculated_total_evaluations: int = 0
+    recalculated_total_hits: int = 0
+    recalculated_total_misses: int = 0
+    recalculated_accuracy: float | None = None
+    recalculated_brier_score: float | None = None
+    recalculated_mean_absolute_error: float | None = None
+    recalculated_metrics_available: bool = False
+    recalculated_metrics_reason: str | None = None
     latest_run: ForecastMonitorRun | None = None
     recent_runs: list[ForecastMonitorRun]
     recent_predictions: list[ForecastMonitorPrediction]

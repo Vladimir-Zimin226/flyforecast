@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
+from app.schemas import HistoricalSnapshot, WeatherSnapshot
+from app.services.predictor import MODEL_VERSION, calculate_probability, make_decision
 
 
 def _parse_datetime(value: str | None) -> datetime | None:
@@ -125,6 +127,12 @@ def _scalar(conn: sqlite3.Connection, query: str, default: int = 0) -> int:
     return int(row[0] or default)
 
 
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    if not _table_exists(conn, table_name):
+        return set()
+    return {row["name"] for row in conn.execute(f"PRAGMA table_info({table_name})").fetchall()}
+
+
 def _expected_predictions(horizons: str | None) -> int:
     if not horizons:
         return 0
@@ -147,6 +155,178 @@ def _run_from_row(row: sqlite3.Row, status: str = "success", error: str | None =
         "predictions_count": predictions_count,
         "expected_predictions": expected,
         "error": error,
+    }
+
+
+def _weather_snapshot_from_prediction(row: sqlite3.Row) -> WeatherSnapshot:
+    return WeatherSnapshot(
+        source=row["weather_source"],
+        available=bool(row["weather_available"]),
+        reason=row["weather_reason"],
+        temperature_2m=row["temperature_2m"],
+        relative_humidity_2m=row["relative_humidity_2m"],
+        dew_point_2m=row["dew_point_2m"],
+        dew_point_spread=row["dew_point_spread"],
+        pressure_msl=row["pressure_msl"],
+        cloud_cover=row["cloud_cover"],
+        cloud_cover_low=row["cloud_cover_low"],
+        precipitation=row["precipitation"],
+        wind_speed_10m=row["wind_speed_10m"],
+        wind_gusts_10m=row["wind_gusts_10m"],
+        weather_code=row["weather_code"],
+        visibility=row["visibility"],
+        fog_low_cloud_risk_score=row["fog_low_cloud_risk_score"],
+        fog_low_cloud_risk_level=row["fog_low_cloud_risk_level"],
+        aggregation_window_start_hour=row["aggregation_window_start_hour"],
+        aggregation_window_end_hour=row["aggregation_window_end_hour"],
+        aggregation_window_hours=row["aggregation_window_hours"],
+        flight_window_available=(
+            bool(row["flight_window_available"])
+            if row["flight_window_available"] is not None
+            else None
+        ),
+        flight_window_start_hour=row["flight_window_start_hour"],
+        flight_window_end_hour=row["flight_window_end_hour"],
+        flight_window_hours=row["flight_window_hours"],
+        flight_window_visibility=row["flight_window_visibility"],
+        flight_window_cloud_cover_low=row["flight_window_cloud_cover_low"],
+        flight_window_fog_low_cloud_risk_score=row["flight_window_fog_low_cloud_risk_score"],
+        flight_window_fog_low_cloud_risk_level=row["flight_window_fog_low_cloud_risk_level"],
+    )
+
+
+def _history_snapshot_from_prediction(row: sqlite3.Row) -> HistoricalSnapshot:
+    return HistoricalSnapshot(
+        source=row["history_source"],
+        similar_days_count=int(row["similar_days_count"]),
+        completed_count=int(row["completed_count"]),
+        cancelled_count=int(row["cancelled_count"]),
+        historical_probability_flight=float(row["historical_probability_flight"]),
+        month_probability_flight=row["month_probability_flight"],
+        decade_probability_flight=row["decade_probability_flight"],
+    )
+
+
+def _recalculate_forecast_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
+    required_prediction_columns = {
+        "weather_source",
+        "weather_available",
+        "weather_reason",
+        "temperature_2m",
+        "relative_humidity_2m",
+        "dew_point_2m",
+        "dew_point_spread",
+        "pressure_msl",
+        "cloud_cover",
+        "cloud_cover_low",
+        "precipitation",
+        "wind_speed_10m",
+        "wind_gusts_10m",
+        "weather_code",
+        "visibility",
+        "fog_low_cloud_risk_score",
+        "fog_low_cloud_risk_level",
+        "aggregation_window_start_hour",
+        "aggregation_window_end_hour",
+        "aggregation_window_hours",
+        "flight_window_available",
+        "flight_window_start_hour",
+        "flight_window_end_hour",
+        "flight_window_hours",
+        "flight_window_visibility",
+        "flight_window_cloud_cover_low",
+        "flight_window_fog_low_cloud_risk_score",
+        "flight_window_fog_low_cloud_risk_level",
+        "history_source",
+        "similar_days_count",
+        "completed_count",
+        "cancelled_count",
+        "historical_probability_flight",
+        "month_probability_flight",
+        "decade_probability_flight",
+    }
+
+    if not _table_exists(conn, "predictions") or not _table_exists(conn, "prediction_evaluations"):
+        return {
+            "model_version": MODEL_VERSION,
+            "total_evaluations": 0,
+            "total_hits": 0,
+            "total_misses": 0,
+            "accuracy": None,
+            "brier_score": None,
+            "mean_absolute_error": None,
+            "available": False,
+            "reason": "Нет таблиц predictions/prediction_evaluations.",
+        }
+
+    missing_columns = required_prediction_columns - _table_columns(conn, "predictions")
+    if missing_columns:
+        return {
+            "model_version": MODEL_VERSION,
+            "total_evaluations": 0,
+            "total_hits": 0,
+            "total_misses": 0,
+            "accuracy": None,
+            "brier_score": None,
+            "mean_absolute_error": None,
+            "available": False,
+            "reason": f"В SQLite нет колонок для пересчёта: {', '.join(sorted(missing_columns))}.",
+        }
+
+    rows = conn.execute(
+        """
+        SELECT
+            p.*,
+            e.outcome_binary
+        FROM predictions p
+        JOIN prediction_evaluations e ON e.prediction_id = p.id
+        """
+    ).fetchall()
+
+    evaluated = len(rows)
+    if not evaluated:
+        return {
+            "model_version": MODEL_VERSION,
+            "total_evaluations": 0,
+            "total_hits": 0,
+            "total_misses": 0,
+            "accuracy": None,
+            "brier_score": None,
+            "mean_absolute_error": None,
+            "available": True,
+            "reason": None,
+        }
+
+    hits = 0
+    brier_sum = 0.0
+    absolute_error_sum = 0.0
+
+    for row in rows:
+        probability = calculate_probability(
+            horizon_days=int(row["horizon_days"]),
+            weather=_weather_snapshot_from_prediction(row),
+            history=_history_snapshot_from_prediction(row),
+        )
+        decision = make_decision(
+            probability_flight=probability,
+            horizon_days=int(row["horizon_days"]),
+        )
+        decision_binary = 1 if decision == "yes" else 0
+        outcome_binary = int(row["outcome_binary"])
+        hits += int(decision_binary == outcome_binary)
+        brier_sum += (probability - outcome_binary) ** 2
+        absolute_error_sum += abs(probability - outcome_binary)
+
+    return {
+        "model_version": MODEL_VERSION,
+        "total_evaluations": evaluated,
+        "total_hits": hits,
+        "total_misses": evaluated - hits,
+        "accuracy": round(hits / evaluated, 4),
+        "brier_score": round(brier_sum / evaluated, 6),
+        "mean_absolute_error": round(absolute_error_sum / evaluated, 6),
+        "available": True,
+        "reason": None,
     }
 
 
@@ -187,6 +367,15 @@ def get_forecast_monitor_status() -> dict:
             "total_misses": 0,
             "total_pending": 0,
             "accuracy": None,
+            "recalculated_model_version": MODEL_VERSION,
+            "recalculated_total_evaluations": 0,
+            "recalculated_total_hits": 0,
+            "recalculated_total_misses": 0,
+            "recalculated_accuracy": None,
+            "recalculated_brier_score": None,
+            "recalculated_mean_absolute_error": None,
+            "recalculated_metrics_available": False,
+            "recalculated_metrics_reason": "SQLite forecast monitor не найден.",
             "latest_run": None,
             "recent_runs": [],
             "recent_predictions": [],
@@ -217,6 +406,7 @@ def get_forecast_monitor_status() -> dict:
 
         total_pending = max(total_predictions - total_evaluations, 0)
         accuracy = round(total_hits / total_evaluations, 4) if total_evaluations else None
+        recalculated_metrics = _recalculate_forecast_metrics(conn)
 
         latest_run_row = None
         recent_runs: list[dict[str, Any]] = []
@@ -340,6 +530,15 @@ def get_forecast_monitor_status() -> dict:
         "total_misses": total_misses,
         "total_pending": total_pending,
         "accuracy": accuracy,
+        "recalculated_model_version": recalculated_metrics["model_version"],
+        "recalculated_total_evaluations": recalculated_metrics["total_evaluations"],
+        "recalculated_total_hits": recalculated_metrics["total_hits"],
+        "recalculated_total_misses": recalculated_metrics["total_misses"],
+        "recalculated_accuracy": recalculated_metrics["accuracy"],
+        "recalculated_brier_score": recalculated_metrics["brier_score"],
+        "recalculated_mean_absolute_error": recalculated_metrics["mean_absolute_error"],
+        "recalculated_metrics_available": recalculated_metrics["available"],
+        "recalculated_metrics_reason": recalculated_metrics["reason"],
         "latest_run": latest_run,
         "recent_runs": recent_runs,
         "recent_predictions": recent_predictions,
