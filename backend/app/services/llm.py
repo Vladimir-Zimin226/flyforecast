@@ -15,8 +15,8 @@ from app.services.predictor import DATA_VERSION, DISCLAIMER, MODEL_VERSION, get_
 
 
 logger = logging.getLogger("flyforecast.llm")
-PROMPT_VERSION = "explanation-v3-decision-consistency"
-CACHE_SCHEMA_VERSION = 1
+PROMPT_VERSION = "explanation-v4-specific-weather-history"
+CACHE_SCHEMA_VERSION = 2
 FORBIDDEN_EXPLANATION_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
@@ -114,6 +114,114 @@ def _is_safe_explanation(text: str, decision: str) -> bool:
     return not any(pattern.search(normalized) for pattern in contradiction_patterns)
 
 
+def _format_percent(value: float | None) -> str | None:
+    if value is None:
+        return None
+    return f"{round(value)}%"
+
+
+def _format_number(value: float | None, unit: str = "") -> str | None:
+    if value is None:
+        return None
+    rounded = round(value, 1)
+    if rounded == round(rounded):
+        rounded = int(rounded)
+    return f"{rounded}{unit}"
+
+
+def _weather_window_text(weather: WeatherSnapshot) -> str:
+    if (
+        weather.flight_window_available
+        and weather.flight_window_start_hour is not None
+        and weather.flight_window_end_hour is not None
+    ):
+        return f"найдено погодное окно {weather.flight_window_start_hour:02d}:00-{weather.flight_window_end_hour:02d}:00"
+
+    if weather.flight_window_available is False:
+        return "устойчивого погодного окна в рабочем интервале не найдено"
+
+    if weather.aggregation_window_start_hour is not None and weather.aggregation_window_end_hour is not None:
+        return f"оценено рабочее окно {weather.aggregation_window_start_hour:02d}:00-{weather.aggregation_window_end_hour:02d}:00"
+
+    return "оценены доступные погодные признаки"
+
+
+def _fog_text(weather: WeatherSnapshot) -> str:
+    risk_labels = {"low": "низкий", "medium": "средний", "high": "высокий"}
+    risk = risk_labels.get(weather.fog_low_cloud_risk_level or "", weather.fog_low_cloud_risk_level)
+    explicit_fog = weather.weather_code is not None and int(weather.weather_code) in {45, 48}
+
+    if explicit_fog:
+        return "в погодном коде есть туман"
+
+    if weather.fog_low_cloud_risk_level == "high":
+        return "есть высокий риск тумана или низкой облачности"
+
+    if weather.fog_low_cloud_risk_level == "medium":
+        return "есть средний риск тумана или низкой облачности"
+
+    if risk:
+        return f"туман не выглядит главным риском: риск {risk}"
+
+    return "явных признаков тумана в прогнозе нет"
+
+
+def _weather_details_text(weather: WeatherSnapshot) -> str:
+    details: list[str] = []
+
+    visibility = weather.flight_window_visibility if weather.flight_window_visibility is not None else weather.visibility
+    if visibility is not None:
+        details.append(f"видимость около {_format_number(visibility, ' м')}")
+
+    cloud_low = (
+        weather.flight_window_cloud_cover_low
+        if weather.flight_window_cloud_cover_low is not None
+        else weather.cloud_cover_low
+    )
+    if cloud_low is not None:
+        details.append(f"низкая облачность {_format_percent(cloud_low)}")
+
+    if weather.wind_gusts_10m is not None:
+        details.append(f"порывы ветра до {_format_number(weather.wind_gusts_10m, ' км/ч')}")
+
+    if weather.relative_humidity_2m is not None:
+        details.append(f"влажность {_format_percent(weather.relative_humidity_2m)}")
+
+    if weather.dew_point_spread is not None:
+        details.append(f"разница температуры и точки росы {_format_number(weather.dew_point_spread, ' °C')}")
+
+    if not details:
+        return "конкретные погодные показатели в ответе источника неполные"
+
+    return ", ".join(details)
+
+
+def _history_details_text(history: HistoricalSnapshot) -> str:
+    historical_percent = round(history.historical_probability_flight * 100)
+
+    if history.similar_days_count > 0:
+        return (
+            f"исторически в похожие даты было {history.completed_count} выполненных "
+            f"и {history.cancelled_count} отмененных дней из {history.similar_days_count}, "
+            f"то есть около {historical_percent}% выполнений"
+        )
+
+    return f"историческая оценка для похожих дат около {historical_percent}% выполнений"
+
+
+def _has_specific_weather_details(text: str, weather: WeatherSnapshot) -> bool:
+    if not weather.available:
+        return True
+
+    normalized = text.lower()
+    has_number = bool(re.search(r"\d", normalized))
+    has_weather_term = any(
+        term in normalized
+        for term in ("видим", "облач", "туман", "ветер", "порыв", "влажн", "рос")
+    )
+    return has_number and has_weather_term
+
+
 def fallback_explanation(
     target_date: str,
     decision: str,
@@ -124,26 +232,28 @@ def fallback_explanation(
     history: HistoricalSnapshot,
 ) -> str:
     probability_percent = round(probability_flight * 100)
-    historical_percent = round(history.historical_probability_flight * 100)
+    history_text = _history_details_text(history)
 
     if not weather.available:
-        horizon_text = "Для этой даты нет точного погодного прогноза, поэтому это климатико-историческая оценка риска."
+        horizon_text = (
+            "Точного погодного прогноза на эту дату пока нет, поэтому оценка опирается на историю и сезонность."
+        )
     elif weather.available:
-        horizon_text = "Для даты доступен погодный прогноз, поэтому в оценке учтены погодные признаки."
+        horizon_text = (
+            f"По погоде: {_weather_window_text(weather)}, {_weather_details_text(weather)}; {_fog_text(weather)}."
+        )
     else:
         horizon_text = "Погодный прогноз для даты недоступен, поэтому оценка опирается на историю похожих дат."
 
     if decision == "yes":
         return (
-            f"Вероятность выполнения рейса — {probability_percent}%, поэтому дата выглядит скорее подходящей для вылета. "
-            f"Исторически похожие даты давали около {historical_percent}% выполненных рейсов. "
-            f"{horizon_text} Это ориентир для планирования, а не гарантия."
+            f"Да: вероятность выполнения рейса {probability_percent}%, поэтому дата выглядит скорее подходящей для вылета. "
+            f"{horizon_text} {history_text}. Это ориентир для планирования, а не гарантия."
         )
 
     return (
-        f"Вероятность выполнения рейса — {probability_percent}%, поэтому риск отмены или невыполнения выглядит повышенным. "
-        f"Исторически похожие даты давали около {historical_percent}% выполненных рейсов. "
-        f"{horizon_text} Это ориентир для планирования, а не гарантия."
+        f"Нет: вероятность выполнения рейса {probability_percent}%, поэтому риск отмены или невыполнения выглядит повышенным. "
+        f"{horizon_text} {history_text}. Это ориентир для планирования, а не гарантия."
     )
 
 
@@ -209,6 +319,9 @@ def generate_user_explanation(
         "Объясняй только вероятность выполнения или невыполнения рейса по погоде, истории и сезонности. "
         "Не обещай выполнение рейса. Не называй сервис официальным источником. "
         "Не придумывай факты. Не меняй вероятность и решение. "
+        "Обязательно назови 2-4 конкретных погодных показателя из factors, если погодный прогноз доступен: видимость, низкая облачность, порывы ветра, влажность, точка росы или погодное окно. "
+        "Обязательно укажи, есть ли риск тумана/низкой облачности или что явных признаков тумана нет. "
+        "Обязательно объясни историческую часть через похожие даты и долю выполненных рейсов. "
         "Если forecast_mode=climate_history, честно укажи, что точного прогноза погоды на дату еще нет и оценка основана на истории/сезонности. "
         "Строго запрещено упоминать билеты, наличие мест, пассажиров, бронирование, салон или продажи. "
         "Если decision=yes, объясняй, почему дата выглядит скорее подходящей для вылета; не начинай с повышенного риска отмены. "
@@ -239,7 +352,7 @@ def generate_user_explanation(
 
         if text:
             explanation = text.strip()
-            if _is_safe_explanation(explanation, decision):
+            if _is_safe_explanation(explanation, decision) and _has_specific_weather_details(explanation, weather):
                 _store_cached_explanation(settings.explanation_cache_path, key, explanation)
                 return explanation
 

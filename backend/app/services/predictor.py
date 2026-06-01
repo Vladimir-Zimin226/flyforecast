@@ -176,10 +176,11 @@ def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, ho
             )
         if weather.visibility is not None:
             if has_flight_window:
+                visibility = weather.flight_window_visibility if weather.flight_window_visibility is not None else weather.visibility
                 factors.append(
                     "видимость в найденном погодном окне "
                     f"{weather.flight_window_start_hour:02d}:00-{weather.flight_window_end_hour:02d}:00: "
-                    f"{round(weather.visibility)} м"
+                    f"{round(visibility)} м"
                 )
             elif weather.aggregation_window_start_hour is not None and weather.aggregation_window_end_hour is not None:
                 factors.append(
@@ -190,7 +191,12 @@ def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, ho
             else:
                 factors.append(f"видимость по прогнозу: {round(weather.visibility)} м")
         if weather.cloud_cover_low is not None:
-            factors.append(f"низкая облачность по прогнозу: {weather.cloud_cover_low}%")
+            cloud_cover_low = (
+                weather.flight_window_cloud_cover_low
+                if has_flight_window and weather.flight_window_cloud_cover_low is not None
+                else weather.cloud_cover_low
+            )
+            factors.append(f"низкая облачность по прогнозу: {cloud_cover_low}%")
         if weather.dew_point_spread is not None:
             factors.append(f"разница температуры и точки росы: {weather.dew_point_spread} °C")
         if weather.wind_gusts_10m is not None:
