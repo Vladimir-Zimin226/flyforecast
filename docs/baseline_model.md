@@ -1,6 +1,6 @@
 # MVP Baseline Model
 
-Этот документ фиксирует текущую логику прогноза `mvp-baseline-005`.
+Этот документ фиксирует текущую логику прогноза `mvp-baseline-006`.
 
 Baseline — это не обученная ML-модель. Это воспроизводимая эвристика в backend, которая даёт честную вероятностную оценку до появления и проверки ML-модели.
 
@@ -15,7 +15,7 @@ backend/app/services/predictor.py
 Текущие версии:
 
 ```text
-model_version: mvp-baseline-005
+model_version: mvp-baseline-006
 data_version: telegram-v2-plus-historical-board-manual-v3-2026-05-20
 ```
 
@@ -169,6 +169,7 @@ WEATHER_FLIGHT_WINDOW_MIN_HOURS=3
 | `cloud_cover_low >= 80` | `-0.01` |
 | `cloud_cover_low >= 95` | `-0.02` |
 | `visibility <= 6000` | `-0.03` |
+| `visibility <= 300` + `fog_low_cloud_risk_level == high` | `-0.16` |
 | `visibility <= 3000` без fog-кода | `-0.02` |
 | `visibility <= 3000` с fog-кодом | `-0.08` |
 | `visibility <= 1000` без fog-кода | `-0.03` |
@@ -177,10 +178,19 @@ WEATHER_FLIGHT_WINDOW_MIN_HOURS=3
 | `dew_point_spread <= 1` | `-0.03` |
 | `fog_low_cloud_risk_level == medium` | `-0.015` |
 | `fog_low_cloud_risk_level == high` без явной низкой видимости/кода тумана | `-0.03` |
-| `fog_low_cloud_risk_level == high` с явной низкой видимостью/кодом тумана | `-0.08` |
+| `fog_low_cloud_risk_level == high` с явной низкой видимостью/кодом тумана | `-0.10` |
 | `precipitation >= 3` | `-0.03` |
 
-Если найдено погодное окно и нет кода тумана, итоговая погодная поправка не опускается ниже `+0.04`. Это нужно, чтобы мягкие прокси вроде высокой влажности, процента низкой облачности или неподтверждённой модельной видимости не отменяли само наличие пригодного окна.
+Если найдено погодное окно и нет кода тумана или экстремального fog proxy, итоговая погодная поправка не опускается ниже `+0.04`. Это нужно, чтобы мягкие прокси вроде высокой влажности, процента низкой облачности или неподтверждённой модельной видимости не отменяли само наличие пригодного окна.
+
+Экстремальный fog proxy:
+
+```text
+visibility <= 300
+and fog_low_cloud_risk_level == high
+```
+
+Такой случай считается сильным сигналом риска отмены даже без WMO-кода тумана `{45, 48}`. Правило добавлено после backtest на production ledger: оно поймало часть отмен 2026-05-25/26 и не создало ложных `no` на текущем оценённом наборе.
 
 Итоговая вероятность ограничивается диапазоном:
 
@@ -336,7 +346,7 @@ Baseline можно менять только с обновлением `model_v
 - frozen training dataset version;
 - список safe features без утечек;
 - time-based train/validation/test split;
-- сравнение с `mvp-baseline-005`;
+- сравнение с `mvp-baseline-006`;
 - Brier Score;
 - calibration curve;
 - отчет по ближнему и дальнему горизонту;

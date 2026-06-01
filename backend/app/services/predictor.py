@@ -3,7 +3,7 @@ from datetime import date, datetime
 from app.schemas import HistoricalSnapshot, WeatherSnapshot
 
 
-MODEL_VERSION = "mvp-baseline-005"
+MODEL_VERSION = "mvp-baseline-006"
 DATA_VERSION = "telegram-v2-plus-historical-board-manual-v3-2026-05-20"
 
 DISCLAIMER = (
@@ -36,7 +36,12 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
 
     adjustment = 0.0
     explicit_fog_code = weather.weather_code is not None and int(weather.weather_code) in {45, 48}
-    severe_visibility_risk = explicit_fog_code
+    extreme_fog_proxy = (
+        weather.visibility is not None
+        and weather.visibility <= 300
+        and weather.fog_low_cloud_risk_level == "high"
+    )
+    severe_visibility_risk = explicit_fog_code or extreme_fog_proxy
 
     if weather.flight_window_available:
         adjustment += 0.12
@@ -68,7 +73,9 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
             adjustment -= 0.01
 
     if weather.visibility is not None:
-        if weather.visibility <= 1000 and explicit_fog_code:
+        if weather.visibility <= 300 and extreme_fog_proxy:
+            adjustment -= 0.16
+        elif weather.visibility <= 1000 and explicit_fog_code:
             adjustment -= 0.12
         elif weather.visibility <= 1000:
             adjustment -= 0.03
@@ -88,7 +95,7 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
     if weather.fog_low_cloud_risk_level == "medium":
         adjustment -= 0.015
     elif weather.fog_low_cloud_risk_level == "high":
-        adjustment -= 0.08 if severe_visibility_risk else 0.03
+        adjustment -= 0.10 if severe_visibility_risk else 0.03
 
     if weather.precipitation is not None and weather.precipitation >= 3:
         adjustment -= 0.03
