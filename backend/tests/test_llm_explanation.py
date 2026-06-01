@@ -22,6 +22,8 @@ class ExplanationTests(unittest.TestCase):
             flight_window_available=True,
             flight_window_start_hour=10,
             flight_window_end_hour=16,
+            aggregation_window_start_hour=8,
+            aggregation_window_end_hour=20,
             flight_window_visibility=9200,
             flight_window_cloud_cover_low=25,
             wind_gusts_10m=31,
@@ -42,12 +44,15 @@ class ExplanationTests(unittest.TestCase):
         )
 
         self.assertIn("Да", explanation)
-        self.assertIn("видимость около 9200 м", explanation)
-        self.assertIn("низкая облачность 25%", explanation)
-        self.assertIn("порывы ветра до 31 км/ч", explanation)
-        self.assertIn("туман", explanation)
+        self.assertIn("есть летное окно примерно с 10:00 до 16:00", explanation)
+        self.assertIn("видимость хорошая, около 9200 м", explanation)
+        self.assertIn("низкая облачность небольшая, 25%", explanation)
+        self.assertIn("ветер умеренный: порывы до 8.6 м/с", explanation)
+        self.assertIn("туман маловероятен", explanation)
+        self.assertIn("Исторически", explanation)
         self.assertIn("85 выполненных", explanation)
         self.assertIn("55 отмененных", explanation)
+        self.assertNotIn("Это ориентир для планирования", explanation)
 
     def test_no_explanation_includes_specific_fog_risk(self) -> None:
         weather = WeatherSnapshot(
@@ -74,10 +79,54 @@ class ExplanationTests(unittest.TestCase):
         )
 
         self.assertIn("Нет", explanation)
-        self.assertIn("видимость около 240 м", explanation)
-        self.assertIn("низкая облачность 100%", explanation)
-        self.assertIn("высокий риск тумана", explanation)
-        self.assertIn("исторически", explanation)
+        self.assertIn("видимость низкая, около 240 м", explanation)
+        self.assertIn("низкая облачность высокая, 100%", explanation)
+        self.assertIn("ветер заметный: порывы до 15.8 м/с", explanation)
+        self.assertIn("туман вероятнее", explanation)
+        self.assertIn("Исторически", explanation)
+
+    def test_full_working_window_does_not_print_fake_precise_time(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=True,
+            flight_window_start_hour=8,
+            flight_window_end_hour=20,
+            aggregation_window_start_hour=8,
+            aggregation_window_end_hour=20,
+            flight_window_visibility=1480,
+            flight_window_cloud_cover_low=7,
+            wind_gusts_10m=24,
+            relative_humidity_2m=72,
+            dew_point_spread=5.1,
+            weather_code=3,
+            fog_low_cloud_risk_level="low",
+        )
+
+        explanation = fallback_explanation(
+            target_date="2026-06-02",
+            decision="yes",
+            probability_flight=0.66,
+            confidence="medium",
+            horizon_days=0,
+            weather=weather,
+            history=HistoricalSnapshot(
+                source="test",
+                similar_days_count=76,
+                completed_count=44,
+                cancelled_count=32,
+                historical_probability_flight=0.58,
+            ),
+        )
+
+        self.assertIn("По погоде: есть летное окно", explanation)
+        self.assertNotIn("08:00-20:00", explanation)
+        self.assertIn("видимость умеренная, около 1480 м", explanation)
+        self.assertIn("низкой облачности практически нет, всего 7%", explanation)
+        self.assertIn("ветер умеренный: порывы до 6.7 м/с", explanation)
+        self.assertIn("туман маловероятен по температуре и точке росы: разница 5.1 °C", explanation)
+        self.assertIn("Исторически", explanation)
+        self.assertNotIn("Это ориентир для планирования", explanation)
 
 
 if __name__ == "__main__":

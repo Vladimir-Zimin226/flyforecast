@@ -144,6 +144,13 @@ def make_decision(probability_flight: float, horizon_days: int) -> str:
     return "yes" if probability_flight >= decision_threshold(horizon_days) else "no"
 
 
+def _format_wind_ms(value_kmh: float) -> str:
+    value_ms = round(value_kmh / 3.6, 1)
+    if value_ms == round(value_ms):
+        value_ms = int(value_ms)
+    return f"{value_ms} м/с"
+
+
 def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, horizon_days: int) -> list[str]:
     factors: list[str] = []
 
@@ -170,10 +177,21 @@ def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, ho
             and weather.flight_window_end_hour is not None
         )
         if has_flight_window:
-            factors.append(
-                "найдено погодное окно для рейса: "
-                f"{weather.flight_window_start_hour:02d}:00-{weather.flight_window_end_hour:02d}:00"
+            has_aggregation_window = (
+                weather.aggregation_window_start_hour is not None
+                and weather.aggregation_window_end_hour is not None
             )
+            if (
+                has_aggregation_window
+                and weather.flight_window_start_hour == weather.aggregation_window_start_hour
+                and weather.flight_window_end_hour == weather.aggregation_window_end_hour
+            ):
+                factors.append("есть летное окно")
+            else:
+                factors.append(
+                    "есть летное окно примерно "
+                    f"с {weather.flight_window_start_hour:02d}:00 до {weather.flight_window_end_hour:02d}:00"
+                )
         if weather.visibility is not None:
             if has_flight_window:
                 visibility = weather.flight_window_visibility if weather.flight_window_visibility is not None else weather.visibility
@@ -200,7 +218,7 @@ def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, ho
         if weather.dew_point_spread is not None:
             factors.append(f"разница температуры и точки росы: {weather.dew_point_spread} °C")
         if weather.wind_gusts_10m is not None:
-            factors.append(f"средние порывы ветра по прогнозу: {weather.wind_gusts_10m} км/ч")
+            factors.append(f"порывы ветра по прогнозу: до {_format_wind_ms(weather.wind_gusts_10m)}")
         if weather.relative_humidity_2m is not None:
             factors.append(f"средняя влажность по прогнозу: {weather.relative_humidity_2m}%")
         if weather.cloud_cover is not None:

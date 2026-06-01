@@ -15,8 +15,8 @@ from app.services.predictor import DATA_VERSION, DISCLAIMER, MODEL_VERSION, get_
 
 
 logger = logging.getLogger("flyforecast.llm")
-PROMPT_VERSION = "explanation-v4-specific-weather-history"
-CACHE_SCHEMA_VERSION = 2
+PROMPT_VERSION = "explanation-v5-human-weather-details"
+CACHE_SCHEMA_VERSION = 3
 FORBIDDEN_EXPLANATION_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
@@ -129,13 +129,98 @@ def _format_number(value: float | None, unit: str = "") -> str | None:
     return f"{rounded}{unit}"
 
 
+def _format_wind_ms(value_kmh: float | None) -> str | None:
+    if value_kmh is None:
+        return None
+    return _format_number(value_kmh / 3.6, " м/с")
+
+
+def _ru_day_phrase(count: int, singular: str, few: str, many: str) -> str:
+    last_two = count % 100
+    last = count % 10
+    if 11 <= last_two <= 14:
+        form = many
+    elif last == 1:
+        form = singular
+    elif 2 <= last <= 4:
+        form = few
+    else:
+        form = many
+    return f"{count} {form}"
+
+
+def _visibility_label(visibility_m: float) -> str:
+    if visibility_m >= 10000:
+        return "отличная"
+    if visibility_m >= 5000:
+        return "хорошая"
+    if visibility_m >= 3000:
+        return "достаточная"
+    if visibility_m >= 1000:
+        return "умеренная"
+    return "низкая"
+
+
+def _cloud_low_text(cloud_low: float) -> str:
+    cloud_value = _format_percent(cloud_low)
+    if cloud_low <= 10:
+        return f"низкой облачности практически нет, всего {cloud_value}"
+    if cloud_low <= 30:
+        return f"низкая облачность небольшая, {cloud_value}"
+    if cloud_low <= 70:
+        return f"низкая облачность умеренная, {cloud_value}"
+    if cloud_low <= 90:
+        return f"низкая облачность заметная, {cloud_value}"
+    return f"низкая облачность высокая, {cloud_value}"
+
+
+def _wind_text(wind_gusts_kmh: float) -> str:
+    wind_ms = wind_gusts_kmh / 3.6
+    formatted = _format_wind_ms(wind_gusts_kmh)
+    if wind_ms < 6:
+        return f"ветер слабый: порывы до {formatted}"
+    if wind_ms < 11:
+        return f"ветер умеренный: порывы до {formatted}"
+    if wind_ms < 17:
+        return f"ветер заметный: порывы до {formatted}"
+    return f"ветер сильный: порывы до {formatted}"
+
+
+def _dew_point_spread_text(dew_point_spread: float) -> str:
+    formatted = _format_number(dew_point_spread, " °C")
+    if dew_point_spread <= 1:
+        return f"туман вероятнее, потому что разница температуры и точки росы всего {formatted}"
+    if dew_point_spread <= 2:
+        return f"туман возможен: разница температуры и точки росы {formatted}"
+    return f"туман маловероятен по температуре и точке росы: разница {formatted}"
+
+
+def _explicit_fog_code(weather: WeatherSnapshot) -> bool:
+    return weather.weather_code is not None and int(weather.weather_code) in {45, 48}
+
+
 def _weather_window_text(weather: WeatherSnapshot) -> str:
     if (
         weather.flight_window_available
         and weather.flight_window_start_hour is not None
         and weather.flight_window_end_hour is not None
     ):
-        return f"найдено погодное окно {weather.flight_window_start_hour:02d}:00-{weather.flight_window_end_hour:02d}:00"
+        has_aggregation_window = (
+            weather.aggregation_window_start_hour is not None
+            and weather.aggregation_window_end_hour is not None
+        )
+        flight_window_matches_full_window = (
+            has_aggregation_window
+            and weather.flight_window_start_hour == weather.aggregation_window_start_hour
+            and weather.flight_window_end_hour == weather.aggregation_window_end_hour
+        )
+        if flight_window_matches_full_window:
+            return "есть летное окно"
+
+        return (
+            "есть летное окно примерно "
+            f"с {weather.flight_window_start_hour:02d}:00 до {weather.flight_window_end_hour:02d}:00"
+        )
 
     if weather.flight_window_available is False:
         return "устойчивого погодного окна в рабочем интервале не найдено"
@@ -149,19 +234,18 @@ def _weather_window_text(weather: WeatherSnapshot) -> str:
 def _fog_text(weather: WeatherSnapshot) -> str:
     risk_labels = {"low": "низкий", "medium": "средний", "high": "высокий"}
     risk = risk_labels.get(weather.fog_low_cloud_risk_level or "", weather.fog_low_cloud_risk_level)
-    explicit_fog = weather.weather_code is not None and int(weather.weather_code) in {45, 48}
 
-    if explicit_fog:
+    if _explicit_fog_code(weather):
         return "в погодном коде есть туман"
 
     if weather.fog_low_cloud_risk_level == "high":
-        return "есть высокий риск тумана или низкой облачности"
+        return "риск тумана высокий"
 
     if weather.fog_low_cloud_risk_level == "medium":
-        return "есть средний риск тумана или низкой облачности"
+        return "риск тумана средний"
 
     if risk:
-        return f"туман не выглядит главным риском: риск {risk}"
+        return f"риск тумана {risk}"
 
     return "явных признаков тумана в прогнозе нет"
 
@@ -171,7 +255,7 @@ def _weather_details_text(weather: WeatherSnapshot) -> str:
 
     visibility = weather.flight_window_visibility if weather.flight_window_visibility is not None else weather.visibility
     if visibility is not None:
-        details.append(f"видимость около {_format_number(visibility, ' м')}")
+        details.append(f"видимость {_visibility_label(visibility)}, около {_format_number(visibility, ' м')}")
 
     cloud_low = (
         weather.flight_window_cloud_cover_low
@@ -179,16 +263,16 @@ def _weather_details_text(weather: WeatherSnapshot) -> str:
         else weather.cloud_cover_low
     )
     if cloud_low is not None:
-        details.append(f"низкая облачность {_format_percent(cloud_low)}")
+        details.append(_cloud_low_text(cloud_low))
 
     if weather.wind_gusts_10m is not None:
-        details.append(f"порывы ветра до {_format_number(weather.wind_gusts_10m, ' км/ч')}")
+        details.append(_wind_text(weather.wind_gusts_10m))
 
     if weather.relative_humidity_2m is not None:
         details.append(f"влажность {_format_percent(weather.relative_humidity_2m)}")
 
     if weather.dew_point_spread is not None:
-        details.append(f"разница температуры и точки росы {_format_number(weather.dew_point_spread, ' °C')}")
+        details.append(_dew_point_spread_text(weather.dew_point_spread))
 
     if not details:
         return "конкретные погодные показатели в ответе источника неполные"
@@ -200,13 +284,25 @@ def _history_details_text(history: HistoricalSnapshot) -> str:
     historical_percent = round(history.historical_probability_flight * 100)
 
     if history.similar_days_count > 0:
+        completed_phrase = _ru_day_phrase(
+            history.completed_count,
+            "выполненный день",
+            "выполненных дня",
+            "выполненных дней",
+        )
+        cancelled_phrase = _ru_day_phrase(
+            history.cancelled_count,
+            "отмененный день",
+            "отмененных дня",
+            "отмененных дней",
+        )
         return (
-            f"исторически в похожие даты было {history.completed_count} выполненных "
-            f"и {history.cancelled_count} отмененных дней из {history.similar_days_count}, "
+            f"Исторически в похожие даты было {completed_phrase} "
+            f"и {cancelled_phrase} из {history.similar_days_count}, "
             f"то есть около {historical_percent}% выполнений"
         )
 
-    return f"историческая оценка для похожих дат около {historical_percent}% выполнений"
+    return f"Историческая оценка для похожих дат около {historical_percent}% выполнений"
 
 
 def _has_specific_weather_details(text: str, weather: WeatherSnapshot) -> bool:
@@ -239,21 +335,23 @@ def fallback_explanation(
             "Точного погодного прогноза на эту дату пока нет, поэтому оценка опирается на историю и сезонность."
         )
     elif weather.available:
-        horizon_text = (
-            f"По погоде: {_weather_window_text(weather)}, {_weather_details_text(weather)}; {_fog_text(weather)}."
-        )
+        weather_parts = [_weather_window_text(weather), _weather_details_text(weather)]
+        should_add_fog_summary = weather.dew_point_spread is None or _explicit_fog_code(weather)
+        if should_add_fog_summary:
+            weather_parts.append(_fog_text(weather))
+        horizon_text = f"По погоде: {'; '.join(weather_parts)}."
     else:
         horizon_text = "Погодный прогноз для даты недоступен, поэтому оценка опирается на историю похожих дат."
 
     if decision == "yes":
         return (
             f"Да: вероятность выполнения рейса {probability_percent}%, поэтому дата выглядит скорее подходящей для вылета. "
-            f"{horizon_text} {history_text}. Это ориентир для планирования, а не гарантия."
+            f"{horizon_text} {history_text}."
         )
 
     return (
         f"Нет: вероятность выполнения рейса {probability_percent}%, поэтому риск отмены или невыполнения выглядит повышенным. "
-        f"{horizon_text} {history_text}. Это ориентир для планирования, а не гарантия."
+        f"{horizon_text} {history_text}."
     )
 
 
@@ -319,10 +417,13 @@ def generate_user_explanation(
         "Объясняй только вероятность выполнения или невыполнения рейса по погоде, истории и сезонности. "
         "Не обещай выполнение рейса. Не называй сервис официальным источником. "
         "Не придумывай факты. Не меняй вероятность и решение. "
-        "Обязательно назови 2-4 конкретных погодных показателя из factors, если погодный прогноз доступен: видимость, низкая облачность, порывы ветра, влажность, точка росы или погодное окно. "
-        "Обязательно укажи, есть ли риск тумана/низкой облачности или что явных признаков тумана нет. "
-        "Обязательно объясни историческую часть через похожие даты и долю выполненных рейсов. "
+        "Обязательно назови 2-4 конкретных погодных показателя из factors, если погодный прогноз доступен: видимость, низкая облачность, ветер в м/с, влажность, точка росы или летное окно. "
+        "Сырые погодные цифры объясняй человечески: хорошая/умеренная/низкая видимость, низкая/заметная облачность, слабый/умеренный/сильный ветер. "
+        "Не пиши время летного окна, если известно только общее рабочее окно; тогда пиши просто, что летное окно есть. "
+        "Объясняй риск тумана через разницу температуры и точки росы, если она есть. "
+        "Обязательно объясни историческую часть через похожие даты и долю выполненных рейсов, начинай историческую фразу с заглавной буквы. "
         "Если forecast_mode=climate_history, честно укажи, что точного прогноза погоды на дату еще нет и оценка основана на истории/сезонности. "
+        "Не добавляй отдельную фразу о том, что прогноз не гарантия: дисклеймер показывается отдельно. "
         "Строго запрещено упоминать билеты, наличие мест, пассажиров, бронирование, салон или продажи. "
         "Если decision=yes, объясняй, почему дата выглядит скорее подходящей для вылета; не начинай с повышенного риска отмены. "
         "Если decision=no, пиши, что риск отмены или невыполнения выше, а не что нет мест. "
