@@ -96,6 +96,32 @@ class PredictorBaselineTests(unittest.TestCase):
         self.assertLess(probability, 0.55)
         self.assertEqual(make_decision(probability, horizon_days=0), "no")
 
+    def test_extreme_visibility_without_gust_signal_does_not_block_yes(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=True,
+            relative_humidity_2m=97,
+            cloud_cover=100,
+            cloud_cover_low=100,
+            wind_speed_10m=18,
+            wind_gusts_10m=31,
+            dew_point_spread=0.8,
+            precipitation=0,
+            weather_code=3,
+            visibility=240,
+            fog_low_cloud_risk_level="high",
+        )
+
+        probability = calculate_probability(
+            horizon_days=0,
+            weather=weather,
+            history=seasonal_late_may_history(),
+        )
+
+        self.assertGreaterEqual(probability, 0.55)
+        self.assertEqual(make_decision(probability, horizon_days=0), "yes")
+
     def test_low_cloud_alone_does_not_remove_flight_window(self) -> None:
         settings = Settings()
         row = {

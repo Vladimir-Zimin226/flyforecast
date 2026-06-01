@@ -1,6 +1,6 @@
 # MVP Baseline Model
 
-Этот документ фиксирует текущую логику прогноза `mvp-baseline-006`.
+Этот документ фиксирует текущую логику прогноза `mvp-baseline-007`.
 
 Baseline — это не обученная ML-модель. Это воспроизводимая эвристика в backend, которая даёт честную вероятностную оценку до появления и проверки ML-модели.
 
@@ -15,7 +15,7 @@ backend/app/services/predictor.py
 Текущие версии:
 
 ```text
-model_version: mvp-baseline-006
+model_version: mvp-baseline-007
 data_version: telegram-v2-plus-historical-board-manual-v3-2026-05-20
 ```
 
@@ -169,7 +169,7 @@ WEATHER_FLIGHT_WINDOW_MIN_HOURS=3
 | `cloud_cover_low >= 80` | `-0.01` |
 | `cloud_cover_low >= 95` | `-0.02` |
 | `visibility <= 6000` | `-0.03` |
-| `visibility <= 300` + `fog_low_cloud_risk_level == high` | `-0.16` |
+| `visibility <= 300` + `cloud_cover_low >= 80` + `wind_gusts_10m >= 35` + `fog_low_cloud_risk_level == high` | `-0.16` |
 | `visibility <= 3000` без fog-кода | `-0.02` |
 | `visibility <= 3000` с fog-кодом | `-0.08` |
 | `visibility <= 1000` без fog-кода | `-0.03` |
@@ -187,10 +187,12 @@ WEATHER_FLIGHT_WINDOW_MIN_HOURS=3
 
 ```text
 visibility <= 300
+and cloud_cover_low >= 80
+and wind_gusts_10m >= 35
 and fog_low_cloud_risk_level == high
 ```
 
-Такой случай считается сильным сигналом риска отмены даже без WMO-кода тумана `{45, 48}`. Правило добавлено после backtest на production ledger: оно поймало часть отмен 2026-05-25/26 и не создало ложных `no` на текущем оценённом наборе.
+Такой случай считается сильным сигналом риска отмены даже без WMO-кода тумана `{45, 48}`. Правило добавлено после backtest на production ledger: более широкое правило по одной экстремальной видимости создавало ложные `no`, поэтому guardrail требует также низкую облачность и порывы.
 
 Итоговая вероятность ограничивается диапазоном:
 
@@ -346,7 +348,7 @@ Baseline можно менять только с обновлением `model_v
 - frozen training dataset version;
 - список safe features без утечек;
 - time-based train/validation/test split;
-- сравнение с `mvp-baseline-006`;
+- сравнение с `mvp-baseline-007`;
 - Brier Score;
 - calibration curve;
 - отчет по ближнему и дальнему горизонту;

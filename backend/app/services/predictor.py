@@ -3,7 +3,7 @@ from datetime import date, datetime
 from app.schemas import HistoricalSnapshot, WeatherSnapshot
 
 
-MODEL_VERSION = "mvp-baseline-006"
+MODEL_VERSION = "mvp-baseline-007"
 DATA_VERSION = "telegram-v2-plus-historical-board-manual-v3-2026-05-20"
 
 DISCLAIMER = (
@@ -39,6 +39,10 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
     extreme_fog_proxy = (
         weather.visibility is not None
         and weather.visibility <= 300
+        and weather.wind_gusts_10m is not None
+        and weather.wind_gusts_10m >= 35
+        and weather.cloud_cover_low is not None
+        and weather.cloud_cover_low >= 80
         and weather.fog_low_cloud_risk_level == "high"
     )
     severe_visibility_risk = explicit_fog_code or extreme_fog_proxy
