@@ -406,6 +406,32 @@ pipelines/evaluation/recalculate_accuracy_snapshot.py
 
 - это не восстановление полного исторического прогноза погоды на момент старого run. Старые версии monitor не всегда сохраняли все поля, например `flight_window_available`; audit честно использует только то, что уже лежит в SQLite.
 
+Команда для полноценного backtest текущего baseline с восстановлением погодного snapshot через Open-Meteo Historical Forecast:
+
+```bash
+docker exec flyforecast-monitor python /app/pipelines/evaluation/backtest_current_baseline.py --db-path /app/data/interim/evaluation/forecast_monitor.sqlite --output-dir /app/data/interim/evaluation/backtests --label current_baseline_historical_forecast --weather-provider historical-forecast --target-accuracy 0.90
+```
+
+Скрипт:
+
+```text
+pipelines/evaluation/backtest_current_baseline.py
+```
+
+Что делает:
+
+- берёт уже оцененные строки forecast monitor;
+- для горизонтов `0..15` заново строит погодные признаки из Open-Meteo Historical Forecast;
+- использует текущую weather-window логику из `backend/app/services/weather.py`;
+- сохраняет `HistoricalSnapshot` из ledger, чтобы не подмешивать будущие факты в историческую вероятность;
+- считает текущую `MODEL_VERSION`, hit, Brier score, absolute error и confusion counts;
+- пишет markdown summary и CSV details в `data/interim/evaluation/backtests`;
+- не меняет SQLite ledger.
+
+Ограничение:
+
+- Open-Meteo Historical Forecast не гарантирует точное восстановление именно того forecast run, который был доступен пользователю в день прогноза. Это лучше, чем пустые старые snapshot, но всё ещё offline-аудит, а не подмена production ledger.
+
 Команда для безопасного snapshot текущих CSV exports без нового запуска monitor:
 
 ```bash
