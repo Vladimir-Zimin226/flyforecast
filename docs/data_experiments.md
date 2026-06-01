@@ -351,6 +351,70 @@ forecast_monitor predictions_inserted=48 outcomes_seen=13 outcomes_changed=13 ev
 
 `evaluations_changed=0` на первом запуске нормально, потому что факты ещё не финализированы по правилу `D+2`.
 
+### Production accuracy snapshot перед `mvp-baseline-005`
+
+Состояние, зафиксированное в админке перед разбором ошибок 27-31 мая и деплоем `mvp-baseline-005`:
+
+```text
+date_observed: 2026-06-01
+model_before_fix: mvp-baseline-004
+total_predictions: 767
+total_evaluations: 70
+total_hits: 24
+total_misses: 46
+total_pending: 697
+accuracy: 0.34
+```
+
+Интерпретация:
+
+- это метрики ledger, а не offline backtest;
+- старые промахи не пересчитываются автоматически после смены `model_version`;
+- `mvp-baseline-005` начнёт влиять только на новые строки `predictions`;
+- для честного сравнения следующих версий нужно сохранять snapshot SQLite/CSV перед каждым изменением baseline.
+
+Команда для production-сервера, чтобы записать текущий markdown snapshot метрик:
+
+```bash
+mkdir -p data/interim/evaluation/snapshots
+SNAPSHOT="data/interim/evaluation/snapshots/forecast_accuracy_snapshot_$(date +%Y%m%d_%H%M%S).md"
+docker exec flyforecast-monitor python -c "import sqlite3; from datetime import datetime; c=sqlite3.connect('/app/data/interim/evaluation/forecast_monitor.sqlite'); c.row_factory=sqlite3.Row; total=c.execute(\"select count(*) total_predictions from predictions\").fetchone(); evals=c.execute(\"select count(*) total_evaluations, coalesce(sum(hit),0) total_hits, count(*)-coalesce(sum(hit),0) total_misses, round(avg(hit),4) accuracy, round(avg(brier_score),6) brier_score, round(avg(absolute_error),6) mean_absolute_error from prediction_evaluations\").fetchone(); pending=c.execute(\"select count(*) total_pending from predictions p left join prediction_evaluations e on e.prediction_id=p.id where e.prediction_id is null\").fetchone(); versions=c.execute(\"select model_version, count(*) predictions from predictions group by model_version order by model_version\").fetchall(); buckets=c.execute(\"select horizon_bucket, count(*) evaluated_count, round(avg(hit),4) accuracy, round(avg(brier_score),6) brier_score, round(avg(absolute_error),6) mean_absolute_error from prediction_evaluations group by horizon_bucket order by horizon_bucket\").fetchall(); latest=c.execute(\"select run_date, target_date, horizon_days, model_version, probability_flight, decision, weather_source from predictions order by id desc limit 10\").fetchall(); print('# Forecast Accuracy Snapshot'); print(); print('generated_at:', datetime.now().isoformat(timespec='seconds')); print(); print('## Totals'); print(dict(total)); print(dict(evals)); print(dict(pending)); print(); print('## Predictions by model_version'); [print(dict(r)) for r in versions]; print(); print('## Metrics by horizon_bucket'); [print(dict(r)) for r in buckets]; print(); print('## Latest predictions'); [print(dict(r)) for r in latest]" > "$SNAPSHOT"
+echo "$SNAPSHOT"
+```
+
+Команда для пересчёта уже оцененных прогнозов текущей backend-логикой без изменения production ledger:
+
+```bash
+docker exec flyforecast-monitor python /app/pipelines/evaluation/recalculate_accuracy_snapshot.py --db-path /app/data/interim/evaluation/forecast_monitor.sqlite --output-dir /app/data/interim/evaluation/snapshots --label recalculated_mvp_baseline_005
+```
+
+Скрипт:
+
+```text
+pipelines/evaluation/recalculate_accuracy_snapshot.py
+```
+
+Что делает:
+
+- берёт все строки `predictions`, у которых уже есть `prediction_evaluations`;
+- собирает из сохранённых колонок `WeatherSnapshot` и `HistoricalSnapshot`;
+- заново считает `probability_flight`, `decision`, hit, Brier score и absolute error текущим `app.services.predictor`;
+- пишет markdown summary и CSV details в `data/interim/evaluation/snapshots`;
+- не меняет SQLite ledger и не перезаписывает исторические прогнозы.
+
+Ограничение:
+
+- это не восстановление полного исторического прогноза погоды на момент старого run. Старые версии monitor не всегда сохраняли все поля, например `flight_window_available`; audit честно использует только то, что уже лежит в SQLite.
+
+Команда для безопасного snapshot текущих CSV exports без нового запуска monitor:
+
+```bash
+EXPORT_SNAPSHOT_DIR="data/interim/evaluation/exports_snapshot_$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$EXPORT_SNAPSHOT_DIR"
+docker cp flyforecast-monitor:/app/data/interim/evaluation/exports/. "$EXPORT_SNAPSHOT_DIR"/
+echo "$EXPORT_SNAPSHOT_DIR"
+```
+
 ---
 
 ## 7. Training Dataset v1
