@@ -113,6 +113,12 @@ def metric_row(rows: list[dict]) -> dict:
     if count == 0:
         return {
             "evaluated_count": 0,
+            "predicted_yes": 0,
+            "predicted_no": 0,
+            "observed_completed": 0,
+            "observed_cancelled": 0,
+            "false_yes": 0,
+            "false_no": 0,
             "accuracy": None,
             "brier_score": None,
             "mean_absolute_error": None,
@@ -122,6 +128,20 @@ def metric_row(rows: list[dict]) -> dict:
 
     return {
         "evaluated_count": count,
+        "predicted_yes": sum(1 for row in rows if row["recalculated_decision"] == "yes"),
+        "predicted_no": sum(1 for row in rows if row["recalculated_decision"] == "no"),
+        "observed_completed": sum(row["outcome_binary"] for row in rows),
+        "observed_cancelled": sum(1 - row["outcome_binary"] for row in rows),
+        "false_yes": sum(
+            1
+            for row in rows
+            if row["recalculated_decision"] == "yes" and row["outcome_binary"] == 0
+        ),
+        "false_no": sum(
+            1
+            for row in rows
+            if row["recalculated_decision"] == "no" and row["outcome_binary"] == 1
+        ),
         "accuracy": round(sum(row["recalculated_hit"] for row in rows) / count, 4),
         "brier_score": round(sum(row["recalculated_brier_score"] for row in rows) / count, 6),
         "mean_absolute_error": round(sum(row["recalculated_absolute_error"] for row in rows) / count, 6),
@@ -164,6 +184,12 @@ def write_markdown(
         "## Recalculated Totals",
         "",
         f"- evaluated_count: {total['evaluated_count']}",
+        f"- predicted_yes: {total['predicted_yes']}",
+        f"- predicted_no: {total['predicted_no']}",
+        f"- observed_completed: {total['observed_completed']}",
+        f"- observed_cancelled: {total['observed_cancelled']}",
+        f"- false_yes: {total['false_yes']}",
+        f"- false_no: {total['false_no']}",
         f"- accuracy: {total['accuracy']}",
         f"- brier_score: {total['brier_score']}",
         f"- mean_absolute_error: {total['mean_absolute_error']}",

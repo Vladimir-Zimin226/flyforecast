@@ -252,6 +252,12 @@ def _recalculate_forecast_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
             "total_evaluations": 0,
             "total_hits": 0,
             "total_misses": 0,
+            "predicted_yes": 0,
+            "predicted_no": 0,
+            "observed_completed": 0,
+            "observed_cancelled": 0,
+            "false_yes": 0,
+            "false_no": 0,
             "accuracy": None,
             "brier_score": None,
             "mean_absolute_error": None,
@@ -266,6 +272,12 @@ def _recalculate_forecast_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
             "total_evaluations": 0,
             "total_hits": 0,
             "total_misses": 0,
+            "predicted_yes": 0,
+            "predicted_no": 0,
+            "observed_completed": 0,
+            "observed_cancelled": 0,
+            "false_yes": 0,
+            "false_no": 0,
             "accuracy": None,
             "brier_score": None,
             "mean_absolute_error": None,
@@ -290,6 +302,12 @@ def _recalculate_forecast_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
             "total_evaluations": 0,
             "total_hits": 0,
             "total_misses": 0,
+            "predicted_yes": 0,
+            "predicted_no": 0,
+            "observed_completed": 0,
+            "observed_cancelled": 0,
+            "false_yes": 0,
+            "false_no": 0,
             "accuracy": None,
             "brier_score": None,
             "mean_absolute_error": None,
@@ -298,6 +316,12 @@ def _recalculate_forecast_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
         }
 
     hits = 0
+    predicted_yes = 0
+    predicted_no = 0
+    observed_completed = 0
+    observed_cancelled = 0
+    false_yes = 0
+    false_no = 0
     brier_sum = 0.0
     absolute_error_sum = 0.0
 
@@ -313,7 +337,14 @@ def _recalculate_forecast_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
         )
         decision_binary = 1 if decision == "yes" else 0
         outcome_binary = int(row["outcome_binary"])
-        hits += int(decision_binary == outcome_binary)
+        predicted_yes += int(decision_binary == 1)
+        predicted_no += int(decision_binary == 0)
+        observed_completed += int(outcome_binary == 1)
+        observed_cancelled += int(outcome_binary == 0)
+        hit = int(decision_binary == outcome_binary)
+        hits += hit
+        false_yes += int(decision_binary == 1 and outcome_binary == 0)
+        false_no += int(decision_binary == 0 and outcome_binary == 1)
         brier_sum += (probability - outcome_binary) ** 2
         absolute_error_sum += abs(probability - outcome_binary)
 
@@ -322,6 +353,12 @@ def _recalculate_forecast_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
         "total_evaluations": evaluated,
         "total_hits": hits,
         "total_misses": evaluated - hits,
+        "predicted_yes": predicted_yes,
+        "predicted_no": predicted_no,
+        "observed_completed": observed_completed,
+        "observed_cancelled": observed_cancelled,
+        "false_yes": false_yes,
+        "false_no": false_no,
         "accuracy": round(hits / evaluated, 4),
         "brier_score": round(brier_sum / evaluated, 6),
         "mean_absolute_error": round(absolute_error_sum / evaluated, 6),
@@ -371,6 +408,12 @@ def get_forecast_monitor_status() -> dict:
             "recalculated_total_evaluations": 0,
             "recalculated_total_hits": 0,
             "recalculated_total_misses": 0,
+            "recalculated_predicted_yes": 0,
+            "recalculated_predicted_no": 0,
+            "recalculated_observed_completed": 0,
+            "recalculated_observed_cancelled": 0,
+            "recalculated_false_yes": 0,
+            "recalculated_false_no": 0,
             "recalculated_accuracy": None,
             "recalculated_brier_score": None,
             "recalculated_mean_absolute_error": None,
@@ -534,6 +577,12 @@ def get_forecast_monitor_status() -> dict:
         "recalculated_total_evaluations": recalculated_metrics["total_evaluations"],
         "recalculated_total_hits": recalculated_metrics["total_hits"],
         "recalculated_total_misses": recalculated_metrics["total_misses"],
+        "recalculated_predicted_yes": recalculated_metrics["predicted_yes"],
+        "recalculated_predicted_no": recalculated_metrics["predicted_no"],
+        "recalculated_observed_completed": recalculated_metrics["observed_completed"],
+        "recalculated_observed_cancelled": recalculated_metrics["observed_cancelled"],
+        "recalculated_false_yes": recalculated_metrics["false_yes"],
+        "recalculated_false_no": recalculated_metrics["false_no"],
         "recalculated_accuracy": recalculated_metrics["accuracy"],
         "recalculated_brier_score": recalculated_metrics["brier_score"],
         "recalculated_mean_absolute_error": recalculated_metrics["mean_absolute_error"],

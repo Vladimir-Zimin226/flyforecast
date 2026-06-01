@@ -149,6 +149,12 @@ class ForecastMonitorStatus(BaseModel):
     recalculated_total_evaluations: int = 0
     recalculated_total_hits: int = 0
     recalculated_total_misses: int = 0
+    recalculated_predicted_yes: int = 0
+    recalculated_predicted_no: int = 0
+    recalculated_observed_completed: int = 0
+    recalculated_observed_cancelled: int = 0
+    recalculated_false_yes: int = 0
+    recalculated_false_no: int = 0
     recalculated_accuracy: float | None = None
     recalculated_brier_score: float | None = None
     recalculated_mean_absolute_error: float | None = None

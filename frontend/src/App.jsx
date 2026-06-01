@@ -1239,6 +1239,18 @@ export default function App() {
                     <span>Оценено: {adminServices.forecast_monitor.total_evaluations}</span>
                     <span>Текущая логика: {adminServices.forecast_monitor.recalculated_model_version || "нет данных"}</span>
                     <span>Ledger accuracy: {nullableProbabilityPercent(adminServices.forecast_monitor.accuracy)}</span>
+                    <span>
+                      Да/Нет: {adminServices.forecast_monitor.recalculated_predicted_yes}/
+                      {adminServices.forecast_monitor.recalculated_predicted_no}
+                    </span>
+                    <span>
+                      Факт выполнен/отменен: {adminServices.forecast_monitor.recalculated_observed_completed}/
+                      {adminServices.forecast_monitor.recalculated_observed_cancelled}
+                    </span>
+                    <span>
+                      Ложное Да/Нет: {adminServices.forecast_monitor.recalculated_false_yes}/
+                      {adminServices.forecast_monitor.recalculated_false_no}
+                    </span>
                     <span>Ждет факт: {adminServices.forecast_monitor.total_pending}</span>
                   </div>
                   <div className="service-summary-grid" aria-label="Сводка фоновых прогнозов">
