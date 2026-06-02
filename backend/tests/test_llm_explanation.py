@@ -80,8 +80,8 @@ class ExplanationTests(unittest.TestCase):
 
         self.assertIn("Нет", explanation)
         self.assertIn("видимость низкая, около 240 м", explanation)
-        self.assertIn("низкая облачность высокая, 100%", explanation)
-        self.assertIn("ветер заметный: порывы до 15.8 м/с", explanation)
+        self.assertIn("наблюдается сильная низкая облачность, 100%", explanation)
+        self.assertIn("заметный ветер: порывы до 15.8 м/с", explanation)
         self.assertIn("туман вероятнее", explanation)
         self.assertIn("Исторически", explanation)
 
@@ -127,6 +127,42 @@ class ExplanationTests(unittest.TestCase):
         self.assertIn("туман маловероятен по температуре и точке росы: разница 5.1 °C", explanation)
         self.assertIn("Исторически", explanation)
         self.assertNotIn("Это ориентир для планирования", explanation)
+
+    def test_no_window_contrasts_good_visibility_with_low_clouds(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=False,
+            visibility=15480,
+            cloud_cover_low=99,
+            wind_gusts_10m=69.5,
+            relative_humidity_2m=82,
+            dew_point_spread=2.9,
+            weather_code=3,
+            fog_low_cloud_risk_level="medium",
+        )
+
+        explanation = fallback_explanation(
+            target_date="2026-06-05",
+            decision="no",
+            probability_flight=0.43,
+            confidence="medium",
+            horizon_days=3,
+            weather=weather,
+            history=HistoricalSnapshot(
+                source="test",
+                similar_days_count=80,
+                completed_count=47,
+                cancelled_count=33,
+                historical_probability_flight=0.59,
+            ),
+        )
+
+        self.assertIn("устойчивого погодного окна в рабочем интервале не найдено", explanation)
+        self.assertIn("несмотря на отличную видимость около 15480 м", explanation)
+        self.assertIn("наблюдается сильная низкая облачность, 99%", explanation)
+        self.assertIn("сильный ветер: порывы до 19.3 м/с", explanation)
+        self.assertNotIn("видимость отличная, около 15480 м, низкая облачность", explanation)
 
 
 if __name__ == "__main__":

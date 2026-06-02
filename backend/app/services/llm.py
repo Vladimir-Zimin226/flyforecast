@@ -15,8 +15,8 @@ from app.services.predictor import DATA_VERSION, DISCLAIMER, MODEL_VERSION, get_
 
 
 logger = logging.getLogger("flyforecast.llm")
-PROMPT_VERSION = "explanation-v5-human-weather-details"
-CACHE_SCHEMA_VERSION = 3
+PROMPT_VERSION = "explanation-v6-weather-contrast"
+CACHE_SCHEMA_VERSION = 4
 FORBIDDEN_EXPLANATION_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
@@ -161,6 +161,17 @@ def _visibility_label(visibility_m: float) -> str:
     return "низкая"
 
 
+def _visibility_accusative_label(visibility_m: float) -> str:
+    labels = {
+        "отличная": "отличную",
+        "хорошая": "хорошую",
+        "достаточная": "достаточную",
+        "умеренная": "умеренную",
+        "низкая": "низкую",
+    }
+    return labels[_visibility_label(visibility_m)]
+
+
 def _cloud_low_text(cloud_low: float) -> str:
     cloud_value = _format_percent(cloud_low)
     if cloud_low <= 10:
@@ -174,6 +185,15 @@ def _cloud_low_text(cloud_low: float) -> str:
     return f"низкая облачность высокая, {cloud_value}"
 
 
+def _cloud_low_risk_text(cloud_low: float) -> str:
+    cloud_value = _format_percent(cloud_low)
+    if cloud_low >= 95:
+        return f"наблюдается сильная низкая облачность, {cloud_value}"
+    if cloud_low >= 80:
+        return f"наблюдается заметная низкая облачность, {cloud_value}"
+    return _cloud_low_text(cloud_low)
+
+
 def _wind_text(wind_gusts_kmh: float) -> str:
     wind_ms = wind_gusts_kmh / 3.6
     formatted = _format_wind_ms(wind_gusts_kmh)
@@ -184,6 +204,16 @@ def _wind_text(wind_gusts_kmh: float) -> str:
     if wind_ms < 17:
         return f"ветер заметный: порывы до {formatted}"
     return f"ветер сильный: порывы до {formatted}"
+
+
+def _wind_risk_text(wind_gusts_kmh: float) -> str:
+    wind_ms = wind_gusts_kmh / 3.6
+    formatted = _format_wind_ms(wind_gusts_kmh)
+    if wind_ms >= 18:
+        return f"сильный ветер: порывы до {formatted}"
+    if wind_ms >= 15:
+        return f"заметный ветер: порывы до {formatted}"
+    return _wind_text(wind_gusts_kmh)
 
 
 def _dew_point_spread_text(dew_point_spread: float) -> str:
@@ -280,6 +310,44 @@ def _weather_details_text(weather: WeatherSnapshot) -> str:
     return ", ".join(details)
 
 
+def _no_flight_window_weather_text(weather: WeatherSnapshot) -> str:
+    blockers: list[str] = []
+    context: list[str] = []
+
+    visibility = weather.visibility
+    if visibility is not None:
+        if visibility >= 5000:
+            context.append(
+                "несмотря на "
+                f"{_visibility_accusative_label(visibility)} видимость около {_format_number(visibility, ' м')}"
+            )
+        else:
+            blockers.append(f"видимость {_visibility_label(visibility)}, около {_format_number(visibility, ' м')}")
+
+    if weather.cloud_cover_low is not None and weather.cloud_cover_low >= 80:
+        blockers.append(_cloud_low_risk_text(weather.cloud_cover_low))
+
+    if weather.wind_gusts_10m is not None and weather.wind_gusts_10m >= 55:
+        blockers.append(_wind_risk_text(weather.wind_gusts_10m))
+
+    if weather.precipitation is not None and weather.precipitation >= 2.5:
+        blockers.append(f"ожидаются осадки около {_format_number(weather.precipitation, ' мм')}")
+
+    if _explicit_fog_code(weather):
+        blockers.append("в погодном коде есть туман")
+    elif weather.dew_point_spread is not None and weather.dew_point_spread <= 2:
+        blockers.append(_dew_point_spread_text(weather.dew_point_spread))
+
+    if not blockers:
+        blockers.append(_weather_details_text(weather))
+
+    detail_parts = context + blockers
+    return (
+        "устойчивого погодного окна в рабочем интервале не найдено: "
+        + ", ".join(detail_parts)
+    )
+
+
 def _history_details_text(history: HistoricalSnapshot) -> str:
     historical_percent = round(history.historical_probability_flight * 100)
 
@@ -335,7 +403,10 @@ def fallback_explanation(
             "Точного погодного прогноза на эту дату пока нет, поэтому оценка опирается на историю и сезонность."
         )
     elif weather.available:
-        weather_parts = [_weather_window_text(weather), _weather_details_text(weather)]
+        if weather.flight_window_available is False:
+            weather_parts = [_no_flight_window_weather_text(weather)]
+        else:
+            weather_parts = [_weather_window_text(weather), _weather_details_text(weather)]
         should_add_fog_summary = weather.dew_point_spread is None or _explicit_fog_code(weather)
         if should_add_fog_summary:
             weather_parts.append(_fog_text(weather))
@@ -419,6 +490,7 @@ def generate_user_explanation(
         "Не придумывай факты. Не меняй вероятность и решение. "
         "Обязательно назови 2-4 конкретных погодных показателя из factors, если погодный прогноз доступен: видимость, низкая облачность, ветер в м/с, влажность, точка росы или летное окно. "
         "Сырые погодные цифры объясняй человечески: хорошая/умеренная/низкая видимость, низкая/заметная облачность, слабый/умеренный/сильный ветер. "
+        "Если погодного окна нет, сначала объясни мешающие факторы; хорошие показатели вроде отличной видимости подавай через 'несмотря на ...'. "
         "Не пиши время летного окна, если известно только общее рабочее окно; тогда пиши просто, что летное окно есть. "
         "Объясняй риск тумана через разницу температуры и точки росы, если она есть. "
         "Обязательно объясни историческую часть через похожие даты и долю выполненных рейсов, начинай историческую фразу с заглавной буквы. "
