@@ -453,6 +453,89 @@ function PrivacyPolicyView({ onBack }) {
   );
 }
 
+function AboutView({ onBack, onPolicy }) {
+  return (
+    <main className="page about-page">
+      <section className="card about-hero-card">
+        <div className="about-hero-copy">
+          <div className="eyebrow">О сервисе</div>
+          <h1>Летит на Курилы?</h1>
+          <p className="lead">
+            Меня зовут Владимир Зимин. Я магистрант ИТМО в AI Talent Hub и предприниматель, занимаюсь развитием ИИ на
+            Сахалине. Этот проект появился в рамках обучения в магистратуре и помогает жителям планировать поездки с
+            Кунашира и на Кунашир в условиях нестабильной погоды.
+          </p>
+          <button className="secondary compact-button" onClick={onBack}>
+            Назад к прогнозу
+          </button>
+        </div>
+        <img className="about-photo" src="/my-photo.jpg" alt="Владимир Зимин" />
+      </section>
+
+      <section className="card about-card">
+        <h2>Как работает сервис</h2>
+        <p>
+          Я взял доступную публично историю вылетов через аэропорт Менделеево, первые записи есть с конца 2017 года,
+          сопоставил эти даты с погодой и выделил признаки, которые чаще всего сопровождают выполненные и отмененные
+          рейсы. На этой базе сервис оценивает вероятность вылета на выбранную дату.
+        </p>
+        <p>
+          Для ближайших дат прогноз учитывает погодную модель: видимость, низкую облачность, ветер, влажность и риск
+          тумана. Когда точного прогноза погоды еще нет, сервис опирается на историю похожих дат и сезонные
+          закономерности. Поэтому дату можно посмотреть заранее, вплоть до года вперед, а затем перепроверить прогноз,
+          когда до поездки останется около двух недель.
+        </p>
+      </section>
+
+      <section className="card about-card">
+        <h2>Точность и ограничения</h2>
+        <p>
+          После последней настройки текущая логика сервиса на проверенных прогнозах с погодой показывает точность около
+          90%. Это хороший ориентир для планирования, но будущие рейсы по-настоящему проверяются только фактами, которые
+          появляются после даты вылета. Поэтому сервис продолжит накапливать статистику и уточнять правила по мере новых
+          наблюдений.
+        </p>
+        <p>
+          Важно помнить: это попытка предсказать событие, которое зависит от погоды, расписания и операционных решений.
+          Ошибка прогноза может стоить времени или денег, поэтому сервис дает вероятность, а окончательное решение о
+          поездке всегда остается за вами.
+        </p>
+      </section>
+
+      <section className="card about-card">
+        <h2>Как правильно пользоваться</h2>
+        <ol className="about-steps">
+          <li>Выберите месяц, в котором планируете поездку, и посмотрите прогноз на нужное число.</li>
+          <li>Сравните соседние даты: часто полезнее найти не один день, а несколько более подходящих окон для вылета.</li>
+          <li>
+            Когда до поездки останется около двух недель, проверьте прогноз еще раз: в нем появится актуальная погодная
+            модель.
+          </li>
+          <li>
+            Если прогноз стал менее благоприятным, посмотрите соседние даты и выберите запасной вариант, если это
+            возможно.
+          </li>
+        </ol>
+        <p>
+          Если сервис помог лучше спланировать поездку, пожалуйста, напишите об этом в отзывах. Негативные случаи тоже
+          важны: они помогают быстрее находить слабые места прогноза.
+        </p>
+      </section>
+
+      <section className="card about-card">
+        <h2>Доступ</h2>
+        <p>
+          На старте без регистрации доступно 5 бесплатных прогнозов. После регистрации можно продолжить пользоваться
+          сервисом бесплатно, сохранять статистику в личном кабинете и оставлять обратную связь.
+        </p>
+        <button type="button" className="text-button policy-link" onClick={onPolicy}>
+          Политика обработки персональных данных
+        </button>
+      </section>
+    </main>
+  );
+}
+
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem(TOKEN_KEY) || "");
   const [adminToken, setAdminToken] = useState(localStorage.getItem(ADMIN_TOKEN_KEY) || "");
@@ -464,6 +547,8 @@ export default function App() {
   const [authMode, setAuthMode] = useState("register");
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
   const [authPromptMessage, setAuthPromptMessage] = useState("");
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -494,6 +579,30 @@ export default function App() {
   const activeToken = token || adminToken;
   const effectivePredictionCount = profile?.prediction_count ?? predictionCount;
   const mustRegister = !activeToken && predictionCount >= FREE_ANON_PREDICTION_LIMIT;
+
+  function navigateTo(path) {
+    window.history.pushState({}, "", path);
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function openAbout(event) {
+    event.preventDefault();
+    navigateTo("/about");
+  }
+
+  function goHome() {
+    navigateTo("/");
+  }
+
+  useEffect(() => {
+    function handlePopState() {
+      setCurrentPath(window.location.pathname);
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   useEffect(() => {
     if (!token) {
@@ -698,6 +807,7 @@ export default function App() {
 
       setAuthPanelOpen(false);
       setAuthPromptMessage("");
+      setAccountOpen(false);
       clearAuthForm();
     } catch (err) {
       setError(err.message || "Ошибка входа");
@@ -745,6 +855,7 @@ export default function App() {
       setToken(data.access_token);
       setAuthPanelOpen(false);
       setAuthPromptMessage("");
+      setAccountOpen(false);
       clearAuthForm();
     } catch (err) {
       setError(err.message || "Ошибка регистрации");
@@ -760,6 +871,7 @@ export default function App() {
     setResult(null);
     setFeedbackMessage("");
     setFeedbackStatus("");
+    setAccountOpen(false);
   }
 
   function handleAdminLogout() {
@@ -954,8 +1066,14 @@ export default function App() {
     }
   }
 
+  const isAboutPage = (currentPath.replace(/\/+$/, "") || "/") === "/about";
+
   if (policyOpen) {
     return <PrivacyPolicyView onBack={() => setPolicyOpen(false)} />;
+  }
+
+  if (isAboutPage) {
+    return <AboutView onBack={goHome} onPolicy={() => setPolicyOpen(true)} />;
   }
 
   return (
@@ -1463,46 +1581,58 @@ export default function App() {
       )}
 
       {token && profile && (
-        <section className="card account-card">
-          <div className="account-header">
-            <div>
-              <div className="eyebrow">Личный кабинет</div>
-              <h2>{profile.name}</h2>
-              <p className="small">{profile.email}</p>
-            </div>
+        <section className={`card account-card ${accountOpen ? "account-card-open" : "account-card-collapsed"}`}>
+          <div className="account-header account-header-collapsible">
+            <button
+              type="button"
+              className="account-summary-button"
+              onClick={() => setAccountOpen((isOpen) => !isOpen)}
+              aria-expanded={accountOpen}
+              aria-label={accountOpen ? "Свернуть личный кабинет" : "Развернуть личный кабинет"}
+            >
+              <span>
+                <span className="eyebrow">Личный кабинет</span>
+                <span className="account-name">{profile.name}</span>
+                <span className="small">{profile.email}</span>
+              </span>
+            </button>
             <button className="secondary account-action" onClick={handleLogout}>
               Выйти
             </button>
           </div>
 
-          <div className="meta-grid account-meta">
-            <div>
-              <span>Прогнозов сделано</span>
-              <strong>{profile.prediction_count}</strong>
-            </div>
-            <div>
-              <span>Отзывов отправлено</span>
-              <strong>{profile.feedback_count}</strong>
-            </div>
-          </div>
+          {accountOpen && (
+            <div className="account-panel">
+              <div className="meta-grid account-meta">
+                <div>
+                  <span>Прогнозов сделано</span>
+                  <strong>{profile.prediction_count}</strong>
+                </div>
+                <div>
+                  <span>Отзывов отправлено</span>
+                  <strong>{profile.feedback_count}</strong>
+                </div>
+              </div>
 
-          <form onSubmit={handleFeedback} className="form feedback-form">
-            <label>
-              Обратная связь по сервису
-              <textarea
-                value={feedbackMessage}
-                onChange={(event) => setFeedbackMessage(event.target.value)}
-                placeholder="Что улучшить, что работает странно, чего не хватает?"
-                maxLength={500}
-              />
-            </label>
-            <p className="small">{feedbackMessage.length} из 500 символов</p>
-            <button disabled={isLoading || feedbackMessage.trim().length < 3}>
-              Отправить отзыв
-            </button>
-          </form>
+              <form onSubmit={handleFeedback} className="form feedback-form">
+                <label>
+                  Обратная связь по сервису
+                  <textarea
+                    value={feedbackMessage}
+                    onChange={(event) => setFeedbackMessage(event.target.value)}
+                    placeholder="Что улучшить, что работает странно, чего не хватает?"
+                    maxLength={500}
+                  />
+                </label>
+                <p className="small">{feedbackMessage.length} из 500 символов</p>
+                <button disabled={isLoading || feedbackMessage.trim().length < 3}>
+                  Отправить отзыв
+                </button>
+              </form>
 
-          {feedbackStatus && <div className="success">{feedbackStatus}</div>}
+              {feedbackStatus && <div className="success">{feedbackStatus}</div>}
+            </div>
+          )}
         </section>
       )}
 
@@ -1667,12 +1797,17 @@ export default function App() {
         </section>
       )}
 
-      <section className="card">
-        <h2>Как это работает</h2>
+      <section className="card service-about-card">
+        <h2>Как работает сервис</h2>
         <p>
-          На ближайшие даты сервис использует историю выполненных и отменённых дней, сезонность, календарные признаки и
-          погодную модель для Менделеево. На дальние даты точного прогноза погоды физически еще нет, поэтому результат
-          показывается как климатико-историческая оценка риска.
+          Сервис знает историю вылетов через аэропорт Менделеево с конца 2017 года, погодные условия, в которых они
+          выполнялись или отменялись, и прогноз погоды примерно на ближайшие две недели. На ближайшие 14 дней
+          предсказание строится с учетом погоды, на более дальний период - по истории вылетов и сезонным
+          закономерностям. Прогноз можно сделать на год вперед. Более подробно о работе сервиса{" "}
+          <a href="/about" className="inline-link" onClick={openAbout}>
+            читайте здесь
+          </a>
+          .
         </p>
         <button type="button" className="text-button policy-link" onClick={() => setPolicyOpen(true)}>
           Политика обработки персональных данных

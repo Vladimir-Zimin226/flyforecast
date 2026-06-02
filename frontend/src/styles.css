@@ -267,6 +267,13 @@ button:disabled {
   transform: none;
 }
 
+.inline-link {
+  color: var(--color-tertiary);
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .small {
   color: var(--color-paragraph);
   font-size: 14px;
@@ -672,9 +679,23 @@ button:disabled {
     gap: 12px;
   }
 
+  .account-header-collapsible {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .account-summary-button {
+    gap: 10px;
+  }
+
+  .account-name {
+    font-size: 23px;
+  }
+
   .account-action {
-    width: 100%;
-    margin-top: 10px;
+    width: auto;
+    margin-top: 0;
+    padding: 12px 14px;
   }
 
   .cookie-banner {
@@ -687,6 +708,18 @@ button:disabled {
   .hero {
     border-radius: 22px;
     padding: 22px;
+  }
+
+  .about-hero-card {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .about-photo {
+    order: -1;
+    max-width: 280px;
+    justify-self: center;
+    border-radius: 20px;
   }
 
   .modal-backdrop {
@@ -787,7 +820,7 @@ button:disabled {
 
 .account-card {
   display: grid;
-  gap: 20px;
+  gap: 18px;
 }
 
 .account-header {
@@ -797,12 +830,76 @@ button:disabled {
   align-items: flex-start;
 }
 
+.account-header-collapsible {
+  align-items: stretch;
+}
+
+.account-summary-button {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  box-shadow: none;
+}
+
+.account-summary-button:hover:not(:disabled),
+.account-summary-button:active:not(:disabled) {
+  transform: none;
+  box-shadow: none;
+}
+
+.account-summary-button > span {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.account-summary-button::after {
+  content: "";
+  width: 11px;
+  height: 11px;
+  margin-right: 4px;
+  flex: 0 0 auto;
+  border-right: 2px solid var(--color-tertiary);
+  border-bottom: 2px solid var(--color-tertiary);
+  transform: rotate(45deg);
+  transition: transform 0.16s ease;
+}
+
+.account-card-open .account-summary-button::after {
+  transform: rotate(225deg);
+}
+
+.account-name {
+  display: block;
+  overflow-wrap: anywhere;
+  color: var(--color-headline);
+  font-size: clamp(22px, 4vw, 32px);
+  font-weight: 900;
+  line-height: 1.08;
+}
+
 .account-header .small {
+  display: block;
+  overflow-wrap: anywhere;
   margin-bottom: 0;
 }
 
 .account-meta {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.account-panel {
+  display: grid;
+  gap: 20px;
 }
 
 .feedback-form {
@@ -831,6 +928,50 @@ button:disabled {
 
 .policy-link {
   margin-top: 8px;
+}
+
+.about-page {
+  max-width: 980px;
+}
+
+.about-hero-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: 28px;
+  align-items: center;
+}
+
+.about-hero-copy {
+  min-width: 0;
+}
+
+.about-photo {
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  border: 2px solid var(--color-stroke);
+  border-radius: 24px;
+  object-fit: cover;
+  background: var(--surface-soft);
+}
+
+.about-card p {
+  line-height: 1.62;
+}
+
+.about-steps {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0 18px;
+  padding-left: 22px;
+}
+
+.about-steps li {
+  color: var(--color-paragraph);
+  line-height: 1.55;
+}
+
+.service-about-card p {
+  line-height: 1.6;
 }
 
 .policy-page {
