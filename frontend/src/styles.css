@@ -959,6 +959,14 @@ button:disabled {
   background: var(--surface-soft);
 }
 
+.about-photo-mobile {
+  display: none;
+}
+
+.about-photo-desktop {
+  display: block;
+}
+
 .about-card p {
   line-height: 1.62;
 }
@@ -1391,10 +1399,18 @@ button:disabled {
 
   .about-photo {
     display: block;
-    order: -1;
     width: min(100%, 280px);
     max-width: 280px;
+    margin: 4px auto 8px;
     justify-self: center;
     border-radius: 20px;
+  }
+
+  .about-photo-desktop {
+    display: none;
+  }
+
+  .about-photo-mobile {
+    display: block;
   }
 }
