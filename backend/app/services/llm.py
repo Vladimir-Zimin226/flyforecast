@@ -15,7 +15,7 @@ from app.services.predictor import DATA_VERSION, DISCLAIMER, MODEL_VERSION, get_
 
 
 logger = logging.getLogger("flyforecast.llm")
-PROMPT_VERSION = "explanation-v6-weather-contrast"
+PROMPT_VERSION = "explanation-v7-window-risk-tone"
 CACHE_SCHEMA_VERSION = 4
 FORBIDDEN_EXPLANATION_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
@@ -182,7 +182,7 @@ def _cloud_low_text(cloud_low: float) -> str:
         return f"низкая облачность умеренная, {cloud_value}"
     if cloud_low <= 90:
         return f"низкая облачность заметная, {cloud_value}"
-    return f"низкая облачность высокая, {cloud_value}"
+    return f"сильная низкая облачность, {cloud_value}"
 
 
 def _cloud_low_risk_text(cloud_low: float) -> str:
@@ -229,12 +229,26 @@ def _explicit_fog_code(weather: WeatherSnapshot) -> bool:
     return weather.weather_code is not None and int(weather.weather_code) in {45, 48}
 
 
-def _weather_window_text(weather: WeatherSnapshot) -> str:
+def _flight_window_hours(weather: WeatherSnapshot) -> int | None:
+    if weather.flight_window_hours is not None:
+        return weather.flight_window_hours
+    if weather.flight_window_start_hour is None or weather.flight_window_end_hour is None:
+        return None
+    return max(weather.flight_window_end_hour - weather.flight_window_start_hour + 1, 1)
+
+
+def _weather_window_text(weather: WeatherSnapshot, decision: str) -> str:
     if (
         weather.flight_window_available
         and weather.flight_window_start_hour is not None
         and weather.flight_window_end_hour is not None
     ):
+        if decision == "no":
+            hours = _flight_window_hours(weather)
+            if hours is not None and hours <= 3:
+                return "летное окно есть, но оно минимальное"
+            return "летное окно есть, но погодные условия внутри него остаются рискованными"
+
         has_aggregation_window = (
             weather.aggregation_window_start_hour is not None
             and weather.aggregation_window_end_hour is not None
@@ -253,7 +267,7 @@ def _weather_window_text(weather: WeatherSnapshot) -> str:
         )
 
     if weather.flight_window_available is False:
-        return "устойчивого погодного окна в рабочем интервале не найдено"
+        return "устойчивое полетное окно не наблюдается"
 
     if weather.aggregation_window_start_hour is not None and weather.aggregation_window_end_hour is not None:
         return f"оценено рабочее окно {weather.aggregation_window_start_hour:02d}:00-{weather.aggregation_window_end_hour:02d}:00"
@@ -342,10 +356,7 @@ def _no_flight_window_weather_text(weather: WeatherSnapshot) -> str:
         blockers.append(_weather_details_text(weather))
 
     detail_parts = context + blockers
-    return (
-        "устойчивого погодного окна в рабочем интервале не найдено: "
-        + ", ".join(detail_parts)
-    )
+    return "устойчивое полетное окно не наблюдается: " + ", ".join(detail_parts)
 
 
 def _history_details_text(history: HistoricalSnapshot) -> str:
@@ -406,7 +417,7 @@ def fallback_explanation(
         if weather.flight_window_available is False:
             weather_parts = [_no_flight_window_weather_text(weather)]
         else:
-            weather_parts = [_weather_window_text(weather), _weather_details_text(weather)]
+            weather_parts = [_weather_window_text(weather, decision), _weather_details_text(weather)]
         should_add_fog_summary = weather.dew_point_spread is None or _explicit_fog_code(weather)
         if should_add_fog_summary:
             weather_parts.append(_fog_text(weather))
@@ -491,7 +502,9 @@ def generate_user_explanation(
         "Обязательно назови 2-4 конкретных погодных показателя из factors, если погодный прогноз доступен: видимость, низкая облачность, ветер в м/с, влажность, точка росы или летное окно. "
         "Сырые погодные цифры объясняй человечески: хорошая/умеренная/низкая видимость, низкая/заметная облачность, слабый/умеренный/сильный ветер. "
         "Если погодного окна нет, сначала объясни мешающие факторы; хорошие показатели вроде отличной видимости подавай через 'несмотря на ...'. "
-        "Не пиши время летного окна, если известно только общее рабочее окно; тогда пиши просто, что летное окно есть. "
+        "Если decision=no и летное окно найдено, не пиши просто 'есть летное окно': объясни, что окно минимальное или что условия внутри него остаются рискованными. "
+        "Если низкая облачность 90% или выше, называй ее сильной низкой облачностью. "
+        "Не пиши время летного окна, если известно только общее рабочее окно; тогда пиши просто, что летное окно есть, если decision=yes. "
         "Объясняй риск тумана через разницу температуры и точки росы, если она есть. "
         "Обязательно объясни историческую часть через похожие даты и долю выполненных рейсов, начинай историческую фразу с заглавной буквы. "
         "Если forecast_mode=climate_history, честно укажи, что точного прогноза погоды на дату еще нет и оценка основана на истории/сезонности. "
