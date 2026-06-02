@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const TOKEN_KEY = "flyforecast_token";
@@ -7,6 +7,8 @@ const ANON_PREDICTION_COUNT_KEY = "flyforecast_prediction_count";
 const COOKIE_NOTICE_KEY = "flyforecast_cookie_notice_ack";
 const ANALYTICS_CONSENT_KEY = "flyforecast_analytics_consent";
 const FREE_ANON_PREDICTION_LIMIT = 5;
+const YANDEX_METRIKA_COUNTER_ID = 109592980;
+const YANDEX_METRIKA_SCRIPT_SRC = `https://mc.yandex.ru/metrika/tag.js?id=${YANDEX_METRIKA_COUNTER_ID}`;
 
 function toIsoDate(date) {
   const year = date.getFullYear();
@@ -18,6 +20,41 @@ function toIsoDate(date) {
 
 function todayIso() {
   return toIsoDate(new Date());
+}
+
+function loadYandexMetrika() {
+  window.dataLayer = window.dataLayer || [];
+  window.ym =
+    window.ym ||
+    function yandexMetrikaQueue() {
+      window.ym.a = window.ym.a || [];
+      window.ym.a.push(arguments);
+    };
+  window.ym.l = window.ym.l || Number(new Date());
+
+  const scriptAlreadyAdded = Array.from(document.scripts).some((script) => script.src === YANDEX_METRIKA_SCRIPT_SRC);
+
+  if (!scriptAlreadyAdded) {
+    const script = document.createElement("script");
+    const firstScript = document.getElementsByTagName("script")[0];
+    script.async = true;
+    script.src = YANDEX_METRIKA_SCRIPT_SRC;
+    firstScript.parentNode.insertBefore(script, firstScript);
+  }
+
+  if (!window.__flyforecastMetrikaInitialized) {
+    window.ym(YANDEX_METRIKA_COUNTER_ID, "init", {
+      ssr: true,
+      webvisor: true,
+      clickmap: true,
+      ecommerce: "dataLayer",
+      referrer: document.referrer,
+      url: window.location.href,
+      accurateTrackBounce: true,
+      trackLinks: true
+    });
+    window.__flyforecastMetrikaInitialized = true;
+  }
 }
 
 function addDaysIso(days) {
@@ -596,6 +633,7 @@ export default function App() {
   const [analyticsConsent, setAnalyticsConsent] = useState(
     localStorage.getItem(ANALYTICS_CONSENT_KEY) === "true"
   );
+  const metrikaLastHitRef = useRef("");
 
   const minDate = useMemo(() => todayIso(), []);
   const maxDate = useMemo(() => addDaysIso(365), []);
@@ -628,6 +666,23 @@ export default function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!analyticsConsent) {
+      return;
+    }
+
+    loadYandexMetrika();
+
+    const currentUrl = window.location.href;
+    if (metrikaLastHitRef.current && metrikaLastHitRef.current !== currentUrl) {
+      window.ym(YANDEX_METRIKA_COUNTER_ID, "hit", currentUrl, {
+        title: document.title,
+        referrer: metrikaLastHitRef.current
+      });
+    }
+    metrikaLastHitRef.current = currentUrl;
+  }, [analyticsConsent, currentPath]);
 
   useEffect(() => {
     if (!token) {
