@@ -945,6 +945,11 @@ button:disabled {
   min-width: 0;
 }
 
+.about-hero-card h1 {
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
 .about-photo {
   width: 100%;
   aspect-ratio: 4 / 5;
@@ -956,6 +961,13 @@ button:disabled {
 
 .about-card p {
   line-height: 1.62;
+}
+
+.about-card a {
+  color: var(--color-tertiary);
+  font-weight: 900;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .about-steps {
@@ -1345,5 +1357,44 @@ button:disabled {
 
   .admin-row-actions button {
     width: 100%;
+  }
+
+  .account-header {
+    display: grid;
+    gap: 12px;
+  }
+
+  .account-header-collapsible {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .account-summary-button {
+    gap: 10px;
+  }
+
+  .account-name {
+    font-size: 23px;
+  }
+
+  .account-action {
+    width: auto;
+    margin-top: 0;
+    padding: 12px 14px;
+  }
+
+  .about-hero-card {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+
+  .about-photo {
+    display: block;
+    order: -1;
+    width: min(100%, 280px);
+    max-width: 280px;
+    justify-self: center;
+    border-radius: 20px;
   }
 }
