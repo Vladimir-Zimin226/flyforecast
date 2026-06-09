@@ -228,7 +228,7 @@ def apply_schedule_guardrails(
         return probability
 
     if schedule.moved_next_day:
-        return min(probability, 0.10)
+        return 0.0
 
     if schedule.completed_same_day:
         return max(probability, 0.85)

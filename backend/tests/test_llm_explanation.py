@@ -1,6 +1,6 @@
 import unittest
 
-from app.schemas import HistoricalSnapshot, WeatherSnapshot
+from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
 from app.services.llm import fallback_explanation
 
 
@@ -15,7 +15,7 @@ def history_snapshot() -> HistoricalSnapshot:
 
 
 class ExplanationTests(unittest.TestCase):
-    def test_yes_explanation_includes_specific_weather_and_history(self) -> None:
+    def test_yes_weather_explanation_includes_specific_weather_without_history(self) -> None:
         weather = WeatherSnapshot(
             source="test",
             available=True,
@@ -44,14 +44,16 @@ class ExplanationTests(unittest.TestCase):
         )
 
         self.assertIn("Да", explanation)
+        self.assertIn("Данные погоды:", explanation)
         self.assertIn("есть летное окно примерно с 10:00 до 16:00", explanation)
         self.assertIn("видимость хорошая, около 9200 м", explanation)
         self.assertIn("низкая облачность небольшая, 25%", explanation)
         self.assertIn("ветер умеренный: порывы до 8.6 м/с", explanation)
         self.assertIn("туман маловероятен", explanation)
-        self.assertIn("Исторически", explanation)
-        self.assertIn("85 выполненных", explanation)
-        self.assertIn("55 отмененных", explanation)
+        self.assertIn("вероятность вылета — 72%", explanation)
+        self.assertNotIn("Исторически", explanation)
+        self.assertNotIn("85 выполненных", explanation)
+        self.assertNotIn("55 отмененных", explanation)
         self.assertNotIn("Это ориентир для планирования", explanation)
 
     def test_no_explanation_includes_specific_fog_risk(self) -> None:
@@ -83,7 +85,8 @@ class ExplanationTests(unittest.TestCase):
         self.assertIn("наблюдается сильная низкая облачность, 100%", explanation)
         self.assertIn("заметный ветер: порывы до 15.8 м/с", explanation)
         self.assertIn("туман вероятнее", explanation)
-        self.assertIn("Исторически", explanation)
+        self.assertIn("вероятность вылета — 41%", explanation)
+        self.assertNotIn("Исторически", explanation)
 
     def test_full_working_window_does_not_print_fake_precise_time(self) -> None:
         weather = WeatherSnapshot(
@@ -125,7 +128,7 @@ class ExplanationTests(unittest.TestCase):
         self.assertIn("низкой облачности практически нет, всего 7%", explanation)
         self.assertIn("ветер умеренный: порывы до 6.7 м/с", explanation)
         self.assertIn("туман маловероятен по температуре и точке росы: разница 5.1 °C", explanation)
-        self.assertIn("Исторически", explanation)
+        self.assertNotIn("Исторически", explanation)
         self.assertNotIn("Это ориентир для планирования", explanation)
 
     def test_no_window_contrasts_good_visibility_with_low_clouds(self) -> None:
@@ -205,6 +208,50 @@ class ExplanationTests(unittest.TestCase):
         self.assertIn("ветер заметный: порывы до 13 м/с", explanation)
         self.assertIn("туман возможен", explanation)
         self.assertNotIn("По погоде: есть летное окно;", explanation)
+
+    def test_board_cancelled_explanation_is_short_and_zero_percent(self) -> None:
+        weather = WeatherSnapshot(source="test", available=True, flight_window_available=True)
+        schedule = FlightScheduleSnapshot(
+            source="test",
+            available=True,
+            moved_next_day=True,
+            observed_at="2026-06-09T10:07:30+11:00",
+        )
+
+        explanation = fallback_explanation(
+            target_date="2026-06-09",
+            decision="no",
+            probability_flight=0.0,
+            confidence="high",
+            horizon_days=0,
+            weather=weather,
+            history=history_snapshot(),
+            schedule=schedule,
+        )
+
+        self.assertIn("Нет", explanation)
+        self.assertIn("табло аэропорта", explanation)
+        self.assertIn("0%", explanation)
+        self.assertNotIn("Данные погоды", explanation)
+        self.assertNotIn("Исторически", explanation)
+
+    def test_climate_history_explanation_keeps_history(self) -> None:
+        weather = WeatherSnapshot(source="test", available=False)
+
+        explanation = fallback_explanation(
+            target_date="2026-07-20",
+            decision="yes",
+            probability_flight=0.61,
+            confidence="low",
+            horizon_days=41,
+            weather=weather,
+            history=history_snapshot(),
+        )
+
+        self.assertIn("Точного погодного прогноза", explanation)
+        self.assertIn("Исторически", explanation)
+        self.assertIn("85 выполненных", explanation)
+        self.assertIn("55 отмененных", explanation)
 
 
 if __name__ == "__main__":

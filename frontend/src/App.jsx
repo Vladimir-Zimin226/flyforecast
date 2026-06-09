@@ -127,6 +127,10 @@ function decisionLabel(decision) {
 }
 
 function decisionToneLabel(result) {
+  if (result.schedule?.moved_next_day) {
+    return "По табло рейс отменен для этой даты";
+  }
+
   const probability = probabilityPercent(result.probability_flight);
 
   if (result.confidence === "low") {
@@ -146,6 +150,10 @@ function lowConfidenceHint(result) {
   }
 
   return "Для этой даты мало надежных похожих случаев в истории, поэтому полезно сравнить соседние даты.";
+}
+
+function isBoardCancelledForSelectedDate(result) {
+  return Boolean(result.schedule?.moved_next_day);
 }
 
 function PredictionDecisionIcon({ decision }) {
@@ -1329,25 +1337,31 @@ export default function App() {
               </div>
             </div>
 
-            <div className="result-probability-box">
-              <span>Вероятность вылета</span>
-              <div className="probability">{probabilityPercent(result.probability_flight)}%</div>
-            </div>
+            {!isBoardCancelledForSelectedDate(result) && (
+              <div className="result-probability-box">
+                <span>Вероятность вылета</span>
+                <div className="probability">{probabilityPercent(result.probability_flight)}%</div>
+              </div>
+            )}
           </div>
 
-          <p className="lead">
-            Вероятность выполнения рейса — {probabilityPercent(result.probability_flight)}%.
-          </p>
+          {!isBoardCancelledForSelectedDate(result) && (
+            <p className="lead">
+              Вероятность выполнения рейса — {probabilityPercent(result.probability_flight)}%.
+            </p>
+          )}
 
           <p className="result-explanation">{renderFormattedExplanation(result.explanation)}</p>
 
-          {result.confidence === "low" && (
+          {result.confidence === "low" && !isBoardCancelledForSelectedDate(result) && (
             <p className="hint">
               {lowConfidenceHint(result)}
             </p>
           )}
 
-          <p className="small">{result.disclaimer}</p>
+          {!isBoardCancelledForSelectedDate(result) && (
+            <p className="small">{result.disclaimer}</p>
+          )}
         </section>
       )}
 

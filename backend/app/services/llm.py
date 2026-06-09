@@ -21,7 +21,7 @@ from app.services.predictor import (
 
 
 logger = logging.getLogger("flyforecast.llm")
-PROMPT_VERSION = "explanation-v8-schedule-aware"
+PROMPT_VERSION = "explanation-v9-board-and-weather"
 CACHE_SCHEMA_VERSION = 5
 FORBIDDEN_EXPLANATION_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
@@ -403,6 +403,53 @@ def _has_specific_weather_details(text: str, weather: WeatherSnapshot) -> bool:
     return has_number and has_weather_term
 
 
+def is_board_cancelled_for_target_date(schedule: FlightScheduleSnapshot | None) -> bool:
+    return bool(schedule is not None and schedule.available and schedule.moved_next_day)
+
+
+def _board_cancelled_explanation(schedule: FlightScheduleSnapshot | None) -> str:
+    observed_text = ""
+    if schedule is not None and schedule.observed_at:
+        observed_text = f" Последнее обновление табло: {schedule.observed_at}."
+    return (
+        "Нет: по информации табло аэропорта рейс на выбранную дату уже перенесен "
+        f"или отменен для этой даты. Вероятность вылета для выбранного дня — 0%.{observed_text}"
+    )
+
+
+def _weather_model_explanation(
+    decision: str,
+    probability_flight: float,
+    weather: WeatherSnapshot,
+    schedule: FlightScheduleSnapshot | None = None,
+) -> str:
+    probability_percent = round(probability_flight * 100)
+
+    schedule_text = ""
+    if schedule is not None and schedule.available:
+        if schedule.completed_same_day:
+            schedule_text = "По последним строкам табло рейс на эту дату уже выполнялся. "
+        elif is_weather_window_too_late_for_schedule(weather, schedule):
+            schedule_text = (
+                "Найденное погодное окно начинается позже основного времени вылета по табло. "
+            )
+
+    if weather.flight_window_available is False:
+        weather_parts = [_no_flight_window_weather_text(weather)]
+    else:
+        weather_parts = [_weather_window_text(weather, decision), _weather_details_text(weather)]
+
+    should_add_fog_summary = weather.dew_point_spread is None or _explicit_fog_code(weather)
+    if should_add_fog_summary:
+        weather_parts.append(_fog_text(weather))
+
+    decision_text = "Да" if decision == "yes" else "Нет"
+    conclusion = (
+        f"Исходя из этих факторов, вероятность вылета — {probability_percent}%."
+    )
+    return f"{decision_text}. {schedule_text}Данные погоды: {'; '.join(weather_parts)}. {conclusion}"
+
+
 def fallback_explanation(
     target_date: str,
     decision: str,
@@ -414,21 +461,22 @@ def fallback_explanation(
     schedule: FlightScheduleSnapshot | None = None,
 ) -> str:
     probability_percent = round(probability_flight * 100)
+    if is_board_cancelled_for_target_date(schedule):
+        return _board_cancelled_explanation(schedule)
+
+    if weather.available:
+        return _weather_model_explanation(
+            decision=decision,
+            probability_flight=probability_flight,
+            weather=weather,
+            schedule=schedule,
+        )
+
     history_text = _history_details_text(history)
     schedule_text = ""
     if schedule is not None and schedule.available:
-        if schedule.moved_next_day:
-            schedule_text = (
-                "По последним строкам табло рейс на эту дату уже перенесен на следующую дату, "
-                "поэтому для выбранного дня это сильный сигнал невыполнения."
-            )
-        elif schedule.completed_same_day:
+        if schedule.completed_same_day:
             schedule_text = "По последним строкам табло рейс на эту дату уже выполнялся."
-        elif is_weather_window_too_late_for_schedule(weather, schedule):
-            schedule_text = (
-                "Найденное погодное окно начинается позже основного времени вылета по табло, "
-                "поэтому оно не должно сильно повышать оценку."
-            )
 
     if not weather.available:
         horizon_text = (
@@ -507,6 +555,11 @@ def generate_user_explanation(
         _store_cached_explanation(settings.explanation_cache_path, key, explanation)
         return explanation
 
+    if is_board_cancelled_for_target_date(schedule):
+        explanation = _board_cancelled_explanation(schedule)
+        _store_cached_explanation(settings.explanation_cache_path, key, explanation)
+        return explanation
+
     factors = get_factor_summary(weather, history, horizon_days, schedule=schedule)
 
     prompt = {
@@ -522,17 +575,18 @@ def generate_user_explanation(
 
     system_message = (
         "Ты пишешь короткое объяснение для сервиса «Летит на Курилы?». "
-        "Объясняй только вероятность выполнения или невыполнения рейса по погоде, истории и сезонности. "
+        "Объясняй вероятность выполнения или невыполнения рейса. "
         "Не обещай выполнение рейса. Не называй сервис официальным источником. "
         "Не придумывай факты. Не меняй вероятность и решение. "
-        "Обязательно назови 2-4 конкретных погодных показателя из factors, если погодный прогноз доступен: видимость, низкая облачность, ветер в м/с, влажность, точка росы или летное окно. "
+        "Если по табло рейс перенесен на другую дату или отменен для выбранного дня, напиши коротко: Нет, по информации табло аэропорта рейс на выбранную дату перенесен или отменен. Не добавляй погоду, историю и дисклеймер. "
+        "Если forecast_mode=weather_model, объясняй только по погоде и табло, без исторической статистики. Обязательно назови 2-4 конкретных погодных показателя из factors: видимость, низкая облачность, ветер в м/с, влажность, давление, точка росы или летное окно. В конце напиши: исходя из этих факторов, вероятность вылета такая-то. "
         "Сырые погодные цифры объясняй человечески: хорошая/умеренная/низкая видимость, низкая/заметная облачность, слабый/умеренный/сильный ветер. "
         "Если погодного окна нет, сначала объясни мешающие факторы; хорошие показатели вроде отличной видимости подавай через 'несмотря на ...'. "
         "Если decision=no и летное окно найдено, не пиши просто 'есть летное окно': объясни, что окно минимальное или что условия внутри него остаются рискованными. "
         "Если низкая облачность 90% или выше, называй ее сильной низкой облачностью. "
         "Не пиши время летного окна, если известно только общее рабочее окно; тогда пиши просто, что летное окно есть, если decision=yes. "
         "Объясняй риск тумана через разницу температуры и точки росы, если она есть. "
-        "Обязательно объясни историческую часть через похожие даты и долю выполненных рейсов, начинай историческую фразу с заглавной буквы. "
+        "Историческую часть упоминай только если forecast_mode=climate_history; тогда объясни похожие даты и долю выполненных рейсов, начинай историческую фразу с заглавной буквы. "
         "Если forecast_mode=climate_history, честно укажи, что точного прогноза погоды на дату еще нет и оценка основана на истории/сезонности. "
         "Не добавляй отдельную фразу о том, что прогноз не гарантия: дисклеймер показывается отдельно. "
         "Строго запрещено упоминать билеты, наличие мест, пассажиров, бронирование, салон или продажи. "

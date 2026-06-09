@@ -176,7 +176,7 @@ class PredictorBaselineTests(unittest.TestCase):
             schedule=schedule,
         )
 
-        self.assertEqual(probability, 0.1)
+        self.assertEqual(probability, 0.0)
         self.assertEqual(make_decision(probability, horizon_days=0), "no")
 
     def test_late_weather_window_does_not_raise_close_date_to_yes(self) -> None:
