@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     consent_log_path: str = "/app/data/interim/consent_logs.jsonl"
     forecast_monitor_db_path: str = "/app/data/interim/evaluation/forecast_monitor.sqlite"
     weather_forecast_cache_path: str = "/app/data/interim/weather_forecast_cache.sqlite"
-    weather_cache_fresh_hours: int = 6
+    weather_cache_fresh_hours: int = 1
     weather_cache_stale_hours: int = 72
     weather_forecast_window_start_hour: int = 8
     weather_forecast_window_end_hour: int = 20

@@ -106,13 +106,13 @@ data/processed/mendeleyevo_fog_risk_dataset.csv
 - hourly collector табло:
 
 ```bash
-python pipelines/flight_status/collect_kunashir_status.py --loop --interval-seconds 3600
+python pipelines/flight_status/collect_kunashir_status.py --loop --interval-seconds 900
 ```
 
 - forecast monitor:
 
 ```bash
-python pipelines/evaluation/forecast_monitor.py --loop --interval-seconds 3600
+python pipelines/evaluation/forecast_monitor.py --loop --interval-seconds 900
 ```
 
 Воспроизводимые batch-сборки, которые сейчас запускаются вручную или по событию:

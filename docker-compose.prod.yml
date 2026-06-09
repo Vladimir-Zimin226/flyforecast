@@ -33,7 +33,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./pipelines:/app/pipelines:ro
-    command: python /app/pipelines/flight_status/collect_kunashir_status.py --loop --interval-seconds 3600 --skip-aurora
+    command: python /app/pipelines/flight_status/collect_kunashir_status.py --loop --interval-seconds 900 --skip-aurora
     restart: unless-stopped
 
   forecast_monitor:
@@ -47,7 +47,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./pipelines:/app/pipelines:ro
-    command: python /app/pipelines/evaluation/forecast_monitor.py --loop --interval-seconds 3600
+    command: python /app/pipelines/evaluation/forecast_monitor.py --loop --interval-seconds 900
     restart: unless-stopped
 
   frontend:

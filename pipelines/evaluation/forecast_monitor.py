@@ -335,7 +335,7 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
 
         cursor = conn.execute(
             """
-            INSERT OR IGNORE INTO predictions (
+            INSERT INTO predictions (
                 run_id, created_at, run_date, target_date, horizon_days,
                 probability_flight, decision, confidence, model_version, data_version,
                 weather_source, weather_available, weather_reason,
@@ -355,6 +355,67 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
                 historical_probability_flight, month_probability_flight, decade_probability_flight
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(run_date, target_date, model_version, data_version) DO UPDATE SET
+                run_id = excluded.run_id,
+                created_at = excluded.created_at,
+                horizon_days = excluded.horizon_days,
+                probability_flight = excluded.probability_flight,
+                decision = excluded.decision,
+                confidence = excluded.confidence,
+                weather_source = excluded.weather_source,
+                weather_available = excluded.weather_available,
+                weather_reason = excluded.weather_reason,
+                temperature_2m = excluded.temperature_2m,
+                relative_humidity_2m = excluded.relative_humidity_2m,
+                dew_point_2m = excluded.dew_point_2m,
+                dew_point_spread = excluded.dew_point_spread,
+                pressure_msl = excluded.pressure_msl,
+                cloud_cover = excluded.cloud_cover,
+                cloud_cover_low = excluded.cloud_cover_low,
+                precipitation = excluded.precipitation,
+                wind_speed_10m = excluded.wind_speed_10m,
+                wind_gusts_10m = excluded.wind_gusts_10m,
+                wind_direction_10m = excluded.wind_direction_10m,
+                weather_code = excluded.weather_code,
+                visibility = excluded.visibility,
+                fog_low_cloud_risk_score = excluded.fog_low_cloud_risk_score,
+                fog_low_cloud_risk_level = excluded.fog_low_cloud_risk_level,
+                aggregation_window_start_hour = excluded.aggregation_window_start_hour,
+                aggregation_window_end_hour = excluded.aggregation_window_end_hour,
+                aggregation_window_hours = excluded.aggregation_window_hours,
+                flight_window_available = excluded.flight_window_available,
+                flight_window_start_hour = excluded.flight_window_start_hour,
+                flight_window_end_hour = excluded.flight_window_end_hour,
+                flight_window_hours = excluded.flight_window_hours,
+                flight_window_visibility = excluded.flight_window_visibility,
+                flight_window_cloud_cover_low = excluded.flight_window_cloud_cover_low,
+                flight_window_fog_low_cloud_risk_score = excluded.flight_window_fog_low_cloud_risk_score,
+                flight_window_fog_low_cloud_risk_level = excluded.flight_window_fog_low_cloud_risk_level,
+                schedule_source = excluded.schedule_source,
+                schedule_available = excluded.schedule_available,
+                schedule_reason = excluded.schedule_reason,
+                schedule_observed_at = excluded.schedule_observed_at,
+                schedule_flight_numbers = excluded.schedule_flight_numbers,
+                schedule_first_departure_hour = excluded.schedule_first_departure_hour,
+                schedule_first_scheduled_hour = excluded.schedule_first_scheduled_hour,
+                schedule_last_scheduled_hour = excluded.schedule_last_scheduled_hour,
+                schedule_moved_next_day = excluded.schedule_moved_next_day,
+                schedule_completed_same_day = excluded.schedule_completed_same_day,
+                schedule_status_summary = excluded.schedule_status_summary,
+                history_source = excluded.history_source,
+                similar_days_count = excluded.similar_days_count,
+                completed_count = excluded.completed_count,
+                cancelled_count = excluded.cancelled_count,
+                historical_probability_flight = excluded.historical_probability_flight,
+                month_probability_flight = excluded.month_probability_flight,
+                decade_probability_flight = excluded.decade_probability_flight
+            WHERE excluded.horizon_days <= 1
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM board_outcomes
+                  WHERE board_outcomes.target_date = excluded.target_date
+                    AND board_outcomes.is_final = 1
+              )
             """,
             (
                 run_id,
