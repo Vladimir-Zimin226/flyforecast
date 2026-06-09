@@ -1,7 +1,7 @@
 import unittest
 
 from app.config import Settings
-from app.schemas import HistoricalSnapshot, WeatherSnapshot
+from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
 from app.services.predictor import calculate_probability, make_decision
 from app.services.weather import _is_flight_opportunity_hour
 
@@ -96,7 +96,7 @@ class PredictorBaselineTests(unittest.TestCase):
         self.assertLess(probability, 0.55)
         self.assertEqual(make_decision(probability, horizon_days=0), "no")
 
-    def test_extreme_visibility_without_gust_signal_does_not_block_yes(self) -> None:
+    def test_extreme_visibility_without_gust_signal_blocks_close_date_yes(self) -> None:
         weather = WeatherSnapshot(
             source="test",
             available=True,
@@ -119,8 +119,8 @@ class PredictorBaselineTests(unittest.TestCase):
             history=seasonal_late_may_history(),
         )
 
-        self.assertGreaterEqual(probability, 0.55)
-        self.assertEqual(make_decision(probability, horizon_days=0), "yes")
+        self.assertLess(probability, 0.58)
+        self.assertEqual(make_decision(probability, horizon_days=0), "no")
 
     def test_low_cloud_alone_does_not_remove_flight_window(self) -> None:
         settings = Settings()
@@ -134,7 +134,7 @@ class PredictorBaselineTests(unittest.TestCase):
 
         self.assertTrue(_is_flight_opportunity_hour(row, settings))
 
-    def test_low_visibility_without_fog_code_does_not_remove_flight_window(self) -> None:
+    def test_low_visibility_without_fog_code_removes_flight_window(self) -> None:
         settings = Settings()
         row = {
             "visibility": 300,
@@ -144,7 +144,81 @@ class PredictorBaselineTests(unittest.TestCase):
             "weather_code": 51,
         }
 
-        self.assertTrue(_is_flight_opportunity_hour(row, settings))
+        self.assertFalse(_is_flight_opportunity_hour(row, settings))
+
+    def test_next_day_board_move_caps_probability(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=True,
+            flight_window_start_hour=8,
+            flight_window_end_hour=20,
+            visibility=12000,
+            cloud_cover_low=20,
+            wind_gusts_10m=28,
+            weather_code=3,
+            fog_low_cloud_risk_level="low",
+        )
+        schedule = FlightScheduleSnapshot(
+            source="test",
+            available=True,
+            first_departure_hour=10,
+            first_scheduled_hour=10,
+            last_scheduled_hour=14,
+            moved_next_day=True,
+            status_summary="delayed",
+        )
+
+        probability = calculate_probability(
+            horizon_days=0,
+            weather=weather,
+            history=seasonal_late_may_history(),
+            schedule=schedule,
+        )
+
+        self.assertEqual(probability, 0.1)
+        self.assertEqual(make_decision(probability, horizon_days=0), "no")
+
+    def test_late_weather_window_does_not_raise_close_date_to_yes(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=True,
+            flight_window_start_hour=14,
+            flight_window_end_hour=20,
+            flight_window_hours=7,
+            visibility=390,
+            cloud_cover_low=47,
+            wind_gusts_10m=37,
+            weather_code=2,
+            fog_low_cloud_risk_level="medium",
+        )
+        schedule = FlightScheduleSnapshot(
+            source="test",
+            available=True,
+            first_departure_hour=10,
+            first_scheduled_hour=10,
+            last_scheduled_hour=13,
+            moved_next_day=False,
+            status_summary="scheduled",
+        )
+
+        probability = calculate_probability(
+            horizon_days=0,
+            weather=weather,
+            history=HistoricalSnapshot(
+                source="test",
+                similar_days_count=84,
+                completed_count=51,
+                cancelled_count=33,
+                historical_probability_flight=0.6071,
+                decade_probability_flight=0.5294,
+            ),
+            schedule=schedule,
+        )
+
+        self.assertLess(probability, 0.58)
+        self.assertEqual(make_decision(probability, horizon_days=0), "no")
 
     def test_extreme_gust_removes_flight_window(self) -> None:
         settings = Settings()

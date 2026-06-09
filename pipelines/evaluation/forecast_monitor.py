@@ -17,6 +17,7 @@ for candidate in (PROJECT_ROOT, PROJECT_ROOT / "backend"):
         break
 
 from app.config import get_settings
+from app.services.flight_schedule import get_flight_schedule_for_date
 from app.services.history import get_historical_snapshot
 from app.services.predictor import (
     DATA_VERSION,
@@ -140,6 +141,17 @@ def init_db(conn: sqlite3.Connection) -> None:
             flight_window_cloud_cover_low REAL,
             flight_window_fog_low_cloud_risk_score REAL,
             flight_window_fog_low_cloud_risk_level TEXT,
+            schedule_source TEXT,
+            schedule_available INTEGER,
+            schedule_reason TEXT,
+            schedule_observed_at TEXT,
+            schedule_flight_numbers TEXT,
+            schedule_first_departure_hour INTEGER,
+            schedule_first_scheduled_hour INTEGER,
+            schedule_last_scheduled_hour INTEGER,
+            schedule_moved_next_day INTEGER,
+            schedule_completed_same_day INTEGER,
+            schedule_status_summary TEXT,
             history_source TEXT NOT NULL,
             similar_days_count INTEGER NOT NULL,
             completed_count INTEGER NOT NULL,
@@ -219,6 +231,17 @@ def ensure_prediction_columns(conn: sqlite3.Connection) -> None:
         "flight_window_cloud_cover_low": "REAL",
         "flight_window_fog_low_cloud_risk_score": "REAL",
         "flight_window_fog_low_cloud_risk_level": "TEXT",
+        "schedule_source": "TEXT",
+        "schedule_available": "INTEGER",
+        "schedule_reason": "TEXT",
+        "schedule_observed_at": "TEXT",
+        "schedule_flight_numbers": "TEXT",
+        "schedule_first_departure_hour": "INTEGER",
+        "schedule_first_scheduled_hour": "INTEGER",
+        "schedule_last_scheduled_hour": "INTEGER",
+        "schedule_moved_next_day": "INTEGER",
+        "schedule_completed_same_day": "INTEGER",
+        "schedule_status_summary": "TEXT",
     }
 
     for column, definition in columns.items():
@@ -289,6 +312,10 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
     inserted = 0
     for horizon in horizons:
         target_date = run_date + timedelta(days=horizon)
+        schedule = get_flight_schedule_for_date(
+            target_date,
+            board_path=Path(settings.flight_status_dataset_path),
+        )
         weather = await fetch_weather_for_date(target_date)
         if horizon <= OPEN_METEO_MAX_HORIZON_DAYS and not weather.available:
             logger.warning(
@@ -300,7 +327,7 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
             continue
 
         history = get_historical_snapshot(target_date)
-        probability = calculate_probability(horizon_days=horizon, weather=weather, history=history)
+        probability = calculate_probability(horizon_days=horizon, weather=weather, history=history, schedule=schedule)
         confidence = get_confidence(horizon_days=horizon, weather=weather, history=history)
         decision = make_decision(probability_flight=probability, horizon_days=horizon)
 
@@ -318,10 +345,14 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
                 flight_window_available, flight_window_start_hour, flight_window_end_hour,
                 flight_window_hours, flight_window_visibility, flight_window_cloud_cover_low,
                 flight_window_fog_low_cloud_risk_score, flight_window_fog_low_cloud_risk_level,
+                schedule_source, schedule_available, schedule_reason, schedule_observed_at,
+                schedule_flight_numbers, schedule_first_departure_hour, schedule_first_scheduled_hour,
+                schedule_last_scheduled_hour, schedule_moved_next_day, schedule_completed_same_day,
+                schedule_status_summary,
                 history_source, similar_days_count, completed_count, cancelled_count,
                 historical_probability_flight, month_probability_flight, decade_probability_flight
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 run_id,
@@ -362,6 +393,17 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
                 weather.flight_window_cloud_cover_low,
                 weather.flight_window_fog_low_cloud_risk_score,
                 weather.flight_window_fog_low_cloud_risk_level,
+                schedule.source,
+                int(schedule.available),
+                schedule.reason,
+                schedule.observed_at,
+                schedule.flight_numbers,
+                schedule.first_departure_hour,
+                schedule.first_scheduled_hour,
+                schedule.last_scheduled_hour,
+                int(schedule.moved_next_day),
+                int(schedule.completed_same_day),
+                schedule.status_summary,
                 history.source,
                 history.similar_days_count,
                 history.completed_count,

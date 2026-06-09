@@ -216,6 +216,22 @@ class WeatherSnapshot(BaseModel):
     flight_window_fog_low_cloud_risk_level: str | None = None
 
 
+class FlightScheduleSnapshot(BaseModel):
+    source: str
+    available: bool
+    reason: str | None = None
+    observed_at: str | None = None
+    flight_numbers: str | None = None
+    first_departure_hour: int | None = None
+    first_scheduled_hour: int | None = None
+    last_scheduled_hour: int | None = None
+    schedule_window_start_hour: int | None = None
+    schedule_window_end_hour: int | None = None
+    moved_next_day: bool = False
+    completed_same_day: bool = False
+    status_summary: str | None = None
+
+
 class HistoricalSnapshot(BaseModel):
     source: str
     similar_days_count: int
@@ -236,6 +252,7 @@ class PredictResponse(BaseModel):
     forecast_mode_label: str
     explanation: str
     weather: WeatherSnapshot
+    schedule: FlightScheduleSnapshot | None = None
     history: HistoricalSnapshot
     model_version: str
     data_version: str

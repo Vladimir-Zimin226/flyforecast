@@ -10,13 +10,19 @@ from typing import Any
 from gigachat import GigaChat
 
 from app.config import get_settings
-from app.schemas import HistoricalSnapshot, WeatherSnapshot
-from app.services.predictor import DATA_VERSION, DISCLAIMER, MODEL_VERSION, get_factor_summary
+from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
+from app.services.predictor import (
+    DATA_VERSION,
+    DISCLAIMER,
+    MODEL_VERSION,
+    get_factor_summary,
+    is_weather_window_too_late_for_schedule,
+)
 
 
 logger = logging.getLogger("flyforecast.llm")
-PROMPT_VERSION = "explanation-v7-window-risk-tone"
-CACHE_SCHEMA_VERSION = 4
+PROMPT_VERSION = "explanation-v8-schedule-aware"
+CACHE_SCHEMA_VERSION = 5
 FORBIDDEN_EXPLANATION_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
     for pattern in (
@@ -51,7 +57,7 @@ DECISION_CONTRADICTION_PATTERNS = {
 }
 
 
-def _snapshot_dict(snapshot: WeatherSnapshot | HistoricalSnapshot) -> dict[str, Any]:
+def _snapshot_dict(snapshot: WeatherSnapshot | HistoricalSnapshot | FlightScheduleSnapshot) -> dict[str, Any]:
     return snapshot.model_dump(mode="json")
 
 
@@ -405,9 +411,24 @@ def fallback_explanation(
     horizon_days: int,
     weather: WeatherSnapshot,
     history: HistoricalSnapshot,
+    schedule: FlightScheduleSnapshot | None = None,
 ) -> str:
     probability_percent = round(probability_flight * 100)
     history_text = _history_details_text(history)
+    schedule_text = ""
+    if schedule is not None and schedule.available:
+        if schedule.moved_next_day:
+            schedule_text = (
+                "По последним строкам табло рейс на эту дату уже перенесен на следующую дату, "
+                "поэтому для выбранного дня это сильный сигнал невыполнения."
+            )
+        elif schedule.completed_same_day:
+            schedule_text = "По последним строкам табло рейс на эту дату уже выполнялся."
+        elif is_weather_window_too_late_for_schedule(weather, schedule):
+            schedule_text = (
+                "Найденное погодное окно начинается позже основного времени вылета по табло, "
+                "поэтому оно не должно сильно повышать оценку."
+            )
 
     if not weather.available:
         horizon_text = (
@@ -425,15 +446,17 @@ def fallback_explanation(
     else:
         horizon_text = "Погодный прогноз для даты недоступен, поэтому оценка опирается на историю похожих дат."
 
+    schedule_prefix = f"{schedule_text} " if schedule_text else ""
+
     if decision == "yes":
         return (
             f"Да: вероятность выполнения рейса {probability_percent}%, поэтому дата выглядит скорее подходящей для вылета. "
-            f"{horizon_text} {history_text}."
+            f"{schedule_prefix}{horizon_text} {history_text}."
         )
 
     return (
         f"Нет: вероятность выполнения рейса {probability_percent}%, поэтому риск отмены или невыполнения выглядит повышенным. "
-        f"{horizon_text} {history_text}."
+        f"{schedule_prefix}{horizon_text} {history_text}."
     )
 
 
@@ -445,6 +468,7 @@ def generate_user_explanation(
     horizon_days: int,
     weather: WeatherSnapshot,
     history: HistoricalSnapshot,
+    schedule: FlightScheduleSnapshot | None = None,
 ) -> str:
     settings = get_settings()
     cache_payload = {
@@ -459,6 +483,7 @@ def generate_user_explanation(
         "confidence": confidence,
         "horizon_days": horizon_days,
         "weather": _snapshot_dict(weather),
+        "schedule": _snapshot_dict(schedule) if schedule is not None else None,
         "history": _snapshot_dict(history),
     }
     key = _cache_key(cache_payload)
@@ -477,11 +502,12 @@ def generate_user_explanation(
             horizon_days=horizon_days,
             weather=weather,
             history=history,
+            schedule=schedule,
         )
         _store_cached_explanation(settings.explanation_cache_path, key, explanation)
         return explanation
 
-    factors = get_factor_summary(weather, history, horizon_days)
+    factors = get_factor_summary(weather, history, horizon_days, schedule=schedule)
 
     prompt = {
         "date": target_date,
@@ -558,8 +584,9 @@ def generate_user_explanation(
         probability_flight=probability_flight,
         confidence=confidence,
         horizon_days=horizon_days,
-        weather=weather,
-        history=history,
-    )
+            weather=weather,
+            history=history,
+            schedule=schedule,
+        )
     _store_cached_explanation(settings.explanation_cache_path, key, explanation)
     return explanation

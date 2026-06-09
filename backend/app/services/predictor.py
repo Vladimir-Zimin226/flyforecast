@@ -1,9 +1,9 @@
 from datetime import date, datetime
 
-from app.schemas import HistoricalSnapshot, WeatherSnapshot
+from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
 
 
-MODEL_VERSION = "mvp-baseline-007"
+MODEL_VERSION = "mvp-baseline-008"
 DATA_VERSION = "telegram-v2-plus-historical-board-manual-v3-2026-05-20"
 
 DISCLAIMER = (
@@ -25,7 +25,26 @@ def get_confidence(horizon_days: int, weather: WeatherSnapshot, history: Histori
     return "low"
 
 
-def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
+def is_weather_window_too_late_for_schedule(
+    weather: WeatherSnapshot,
+    schedule: FlightScheduleSnapshot | None,
+) -> bool:
+    if (
+        schedule is None
+        or not schedule.available
+        or schedule.first_departure_hour is None
+        or weather.flight_window_start_hour is None
+    ):
+        return False
+
+    latest_useful_start_hour = min(schedule.first_departure_hour + 1, 23)
+    return weather.flight_window_start_hour > latest_useful_start_hour
+
+
+def calculate_weather_adjustment(
+    weather: WeatherSnapshot,
+    schedule: FlightScheduleSnapshot | None = None,
+) -> float:
     """
     MVP-эвристика.
     Она не заменяет ML-модель, а даёт слабую поправку на ближнем горизонте.
@@ -36,6 +55,7 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
 
     adjustment = 0.0
     explicit_fog_code = weather.weather_code is not None and int(weather.weather_code) in {45, 48}
+    low_visibility = weather.visibility is not None and weather.visibility <= 1000
     extreme_fog_proxy = (
         weather.visibility is not None
         and weather.visibility <= 300
@@ -45,12 +65,17 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
         and weather.cloud_cover_low >= 80
         and weather.fog_low_cloud_risk_level == "high"
     )
-    severe_visibility_risk = explicit_fog_code or extreme_fog_proxy
+    severe_visibility_risk = explicit_fog_code or extreme_fog_proxy or (
+        low_visibility and weather.fog_low_cloud_risk_level in {"medium", "high"}
+    )
+    late_schedule_window = is_weather_window_too_late_for_schedule(weather, schedule)
 
-    if weather.flight_window_available:
-        adjustment += 0.12
+    if weather.flight_window_available and not late_schedule_window:
+        adjustment += 0.08
+    elif weather.flight_window_available and late_schedule_window:
+        adjustment -= 0.08
     else:
-        adjustment -= 0.04
+        adjustment -= 0.06
 
     if weather.wind_speed_10m is not None and weather.wind_speed_10m >= 30:
         adjustment -= 0.03
@@ -82,11 +107,11 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
         elif weather.visibility <= 1000 and explicit_fog_code:
             adjustment -= 0.12
         elif weather.visibility <= 1000:
-            adjustment -= 0.03
+            adjustment -= 0.10
         elif weather.visibility <= 3000 and explicit_fog_code:
             adjustment -= 0.08
         elif weather.visibility <= 3000:
-            adjustment -= 0.02
+            adjustment -= 0.06
         elif weather.visibility <= 6000:
             adjustment -= 0.03
 
@@ -104,16 +129,33 @@ def calculate_weather_adjustment(weather: WeatherSnapshot) -> float:
     if weather.precipitation is not None and weather.precipitation >= 3:
         adjustment -= 0.03
 
-    if weather.flight_window_available and not severe_visibility_risk and adjustment < 0.04:
-        adjustment = 0.04
+    if weather.flight_window_available and not severe_visibility_risk and not late_schedule_window and adjustment < 0.03:
+        adjustment = 0.03
 
     return adjustment
+
+
+def apply_schedule_guardrails(
+    probability: float,
+    schedule: FlightScheduleSnapshot | None,
+) -> float:
+    if schedule is None or not schedule.available:
+        return probability
+
+    if schedule.moved_next_day:
+        return min(probability, 0.10)
+
+    if schedule.completed_same_day:
+        return max(probability, 0.85)
+
+    return probability
 
 
 def calculate_probability(
     horizon_days: int,
     weather: WeatherSnapshot,
     history: HistoricalSnapshot,
+    schedule: FlightScheduleSnapshot | None = None,
 ) -> float:
     base = history.historical_probability_flight
 
@@ -122,7 +164,9 @@ def calculate_probability(
 
     # Погодную поправку используем только там, где forecast реально есть.
     if horizon_days <= 15:
-        base += calculate_weather_adjustment(weather)
+        base += calculate_weather_adjustment(weather, schedule=schedule)
+
+    base = apply_schedule_guardrails(base, schedule)
 
     return round(min(max(base, 0.05), 0.95), 4)
 
@@ -133,6 +177,8 @@ def decision_threshold(horizon_days: int) -> float:
     - близкая дата требует более уверенного "Да";
     - дальняя дата может быть "Да", если она лучше исторического окна.
     """
+    if horizon_days <= 2:
+        return 0.58
     if horizon_days <= 10:
         return 0.55
     if horizon_days <= 46:
@@ -151,7 +197,12 @@ def _format_wind_ms(value_kmh: float) -> str:
     return f"{value_ms} м/с"
 
 
-def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, horizon_days: int) -> list[str]:
+def get_factor_summary(
+    weather: WeatherSnapshot,
+    history: HistoricalSnapshot,
+    horizon_days: int,
+    schedule: FlightScheduleSnapshot | None = None,
+) -> list[str]:
     factors: list[str] = []
 
     factors.append(
@@ -162,6 +213,18 @@ def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, ho
         factors.append(
             f"в истории найдено похожих дней: {history.similar_days_count}"
         )
+
+    if schedule is not None and schedule.available:
+        if schedule.moved_next_day:
+            factors.append("по последним строкам табло рейс на эту дату перенесен на следующую дату")
+        elif schedule.completed_same_day:
+            factors.append("по последним строкам табло рейс на эту дату уже выполнялся")
+        elif schedule.first_departure_hour is not None and schedule.last_scheduled_hour is not None:
+            factors.append(
+                "расписание табло на дату: "
+                f"первый вылет около {schedule.first_departure_hour:02d}:00, "
+                f"последний рейс около {schedule.last_scheduled_hour:02d}:00"
+            )
 
     if horizon_days > 46:
         factors.append("дальний горизонт: точного прогноза погоды нет, уверенность ниже")
@@ -177,6 +240,8 @@ def get_factor_summary(weather: WeatherSnapshot, history: HistoricalSnapshot, ho
             and weather.flight_window_end_hour is not None
         )
         if has_flight_window:
+            if is_weather_window_too_late_for_schedule(weather, schedule):
+                factors.append("найденное погодное окно начинается позже основного времени вылета по табло")
             has_aggregation_window = (
                 weather.aggregation_window_start_hour is not None
                 and weather.aggregation_window_end_hour is not None

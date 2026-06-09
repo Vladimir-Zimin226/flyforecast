@@ -132,7 +132,7 @@ def _is_flight_opportunity_hour(row: dict[str, float | int | None], settings: Se
     visibility = row.get("visibility")
     weather_code = row.get("weather_code")
     has_fog_code = weather_code is not None and int(weather_code) in FOG_WEATHER_CODES
-    if visibility is not None and visibility < settings.weather_flight_window_min_visibility and has_fog_code:
+    if visibility is not None and visibility < settings.weather_flight_window_min_visibility:
         return False
 
     wind_gusts = row.get("wind_gusts_10m")

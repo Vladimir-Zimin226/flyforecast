@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import get_settings
-from app.schemas import HistoricalSnapshot, WeatherSnapshot
+from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
 from app.services.predictor import MODEL_VERSION, calculate_probability, make_decision
 
 
@@ -207,6 +207,26 @@ def _history_snapshot_from_prediction(row: sqlite3.Row) -> HistoricalSnapshot:
     )
 
 
+def _schedule_snapshot_from_prediction(row: sqlite3.Row) -> FlightScheduleSnapshot | None:
+    keys = set(row.keys())
+    if "schedule_available" not in keys:
+        return None
+
+    return FlightScheduleSnapshot(
+        source=row["schedule_source"] or "forecast-monitor",
+        available=bool(row["schedule_available"]),
+        reason=row["schedule_reason"],
+        observed_at=row["schedule_observed_at"],
+        flight_numbers=row["schedule_flight_numbers"],
+        first_departure_hour=row["schedule_first_departure_hour"],
+        first_scheduled_hour=row["schedule_first_scheduled_hour"],
+        last_scheduled_hour=row["schedule_last_scheduled_hour"],
+        moved_next_day=bool(row["schedule_moved_next_day"]),
+        completed_same_day=bool(row["schedule_completed_same_day"]),
+        status_summary=row["schedule_status_summary"],
+    )
+
+
 def _recalculate_forecast_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
     required_prediction_columns = {
         "weather_source",
@@ -330,6 +350,7 @@ def _recalculate_forecast_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
             horizon_days=int(row["horizon_days"]),
             weather=_weather_snapshot_from_prediction(row),
             history=_history_snapshot_from_prediction(row),
+            schedule=_schedule_snapshot_from_prediction(row),
         )
         decision = make_decision(
             probability_flight=probability,

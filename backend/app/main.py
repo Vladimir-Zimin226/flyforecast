@@ -24,6 +24,7 @@ from app.schemas import (
     UserProfileResponse,
 )
 from app.services.background_services import get_admin_services_status
+from app.services.flight_schedule import get_flight_schedule_for_date
 from app.services.history import get_historical_snapshot
 from app.services.llm import generate_user_explanation
 from app.services.predictor import (
@@ -226,6 +227,29 @@ async def predict(
         horizon_days,
     )
 
+    schedule = get_flight_schedule_for_date(target_date)
+
+    logger.info(
+        (
+            "schedule_snapshot request_id=%s target_date=%s source=%s available=%s reason=%s "
+            "observed_at=%s flight_numbers=%s first_departure_hour=%s first_scheduled_hour=%s "
+            "last_scheduled_hour=%s moved_next_day=%s completed_same_day=%s status_summary=%s"
+        ),
+        request_id,
+        target_date.isoformat(),
+        schedule.source,
+        schedule.available,
+        schedule.reason,
+        schedule.observed_at,
+        schedule.flight_numbers,
+        schedule.first_departure_hour,
+        schedule.first_scheduled_hour,
+        schedule.last_scheduled_hour,
+        schedule.moved_next_day,
+        schedule.completed_same_day,
+        schedule.status_summary,
+    )
+
     weather = await fetch_weather_for_date(target_date)
 
     logger.info(
@@ -302,12 +326,14 @@ async def predict(
         horizon_days=horizon_days,
         weather=weather,
         history=history,
+        schedule=schedule,
     )
 
     confidence = get_confidence(
         horizon_days=horizon_days,
         weather=weather,
         history=history,
+        schedule=schedule,
     )
 
     decision = make_decision(
@@ -363,6 +389,7 @@ async def predict(
         forecast_mode_label=forecast_mode_label,
         explanation=explanation,
         weather=weather,
+        schedule=schedule,
         history=history,
         model_version=MODEL_VERSION,
         data_version=DATA_VERSION,
@@ -456,6 +483,17 @@ def log_prediction(
         "flight_window_fog_low_cloud_risk_level": result.weather.flight_window_fog_low_cloud_risk_level,
         "wind_speed_10m": result.weather.wind_speed_10m,
         "wind_gusts_10m": result.weather.wind_gusts_10m,
+        "schedule_available": result.schedule.available if result.schedule else None,
+        "schedule_source": result.schedule.source if result.schedule else None,
+        "schedule_reason": result.schedule.reason if result.schedule else None,
+        "schedule_observed_at": result.schedule.observed_at if result.schedule else None,
+        "schedule_flight_numbers": result.schedule.flight_numbers if result.schedule else None,
+        "schedule_first_departure_hour": result.schedule.first_departure_hour if result.schedule else None,
+        "schedule_first_scheduled_hour": result.schedule.first_scheduled_hour if result.schedule else None,
+        "schedule_last_scheduled_hour": result.schedule.last_scheduled_hour if result.schedule else None,
+        "schedule_moved_next_day": result.schedule.moved_next_day if result.schedule else None,
+        "schedule_completed_same_day": result.schedule.completed_same_day if result.schedule else None,
+        "schedule_status_summary": result.schedule.status_summary if result.schedule else None,
         "relative_humidity_2m": result.weather.relative_humidity_2m,
         "cloud_cover": result.weather.cloud_cover,
         "history_source": result.history.source,
