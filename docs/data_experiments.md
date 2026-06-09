@@ -531,3 +531,474 @@ weather_feature_columns=58
 Главный принцип:
 
 > Fact dataset должен быть максимально честным и осторожным, а training dataset может быть богатым признаками, но без утечки будущего.
+
+---
+
+## 9. Weather Pattern Search After June 2026 Errors
+
+Дата разбора: `2026-06-09`.
+
+Контекст:
+
+- сервис начал заметно ошибаться на свежих днях июня;
+- особенно важны кейсы `2026-06-03` / `2026-06-04` / `2026-06-08` / `2026-06-09`;
+- цель разбора — не "подогнать" прогноз под известные факты, а найти погодные режимы, которые можно честно использовать в predictor.
+
+Использованные данные из server export:
+
+```text
+data/interim/analysis/export_20260609_121758/processed/training_dataset_v1.csv
+data/interim/analysis/export_20260609_121758/processed/mendeleyevo_fog_risk_dataset.csv
+data/interim/analysis/export_20260609_121758/open_meteo_daily_2026-05-23_2026-06-09.csv
+data/interim/analysis/export_20260609_121758/open_meteo_hourly_2026-05-23_2026-06-09.csv
+data/interim/analysis/export_20260609_121758/forecast_vs_fact_joined_2026-05-23_2026-06-09.csv
+```
+
+База для primary weather-pattern анализа:
+
+- rows: `761`;
+- period: `2017-12-13` -> `2026-05-26`;
+- `completed`: `411`;
+- `cancelled`: `350`;
+- always-completed baseline: около `54%`.
+
+Важное ограничение:
+
+- проблемные дни `2026-06-03` -> `2026-06-09` не входят в `training_dataset_v1.csv`;
+- для них отдельно смотрелись monitor snapshots и фактическая/почасовая погода из export;
+- это снижает риск прямого подгона правил под июньские ошибки.
+
+### 9.1. Fog / visibility signal exists, but is not deterministic
+
+Погодная закономерность по туману и видимости есть, но она вероятностная.
+
+По Менделеево:
+
+- `fog_low_cloud_risk_level=high`: отмена `60.8%`;
+- `fog_low_cloud_risk_level=medium`: отмена `49.7%`;
+- `fog_low_cloud_risk_level=low`: отмена `29.6%`;
+- `visibility_mean <= 3000 м`: отмена `72.1%`;
+- `visibility_min <= 300 м`: отмена `61.8%`, но при этом `92` выполненных рейса против `149` отмен.
+
+Интерпретация:
+
+- низкая видимость и высокий fog risk — сильные отрицательные признаки;
+- но одно правило вида "видимость <= N -> отмена" будет давать много ложных `no`;
+- нужен режимный прогноз, где туман комбинируется с ветром, давлением, осадками и облачностью.
+
+### 9.2. Human-suggested wind direction hypothesis
+
+Гипотезу про направление и силу ветра предложил человек, Владимир:
+
+> Возможно, если есть туман, но ветер восточный и достаточно сильный, аэропорт на горе раскрывается; а при другом направлении наоборот.
+
+Проверка показала, что сама идея смотреть направление ветра очень полезная, но конкретная гипотеза про "сильный восточный ветер спасает" в текущих данных не подтвердилась.
+
+Менделеево, направление ветра overall:
+
+- `SW`: отмена `21%`, самый "летный" сектор;
+- `N`: отмена `41%`;
+- `W` / `NW`: около `45%`;
+- `E` / `SE` / `S` / `NE`: около `49-55%`.
+
+Комбинации:
+
+- `E/SE + wind >= 35 км/ч`: отмена `81.5%` (`22` отмены / `5` выполнений);
+- `E/SE + pressure_min <= 1005 + wind >= 25 км/ч`: отмена `81.8%`;
+- `E/SE + visibility_min <= 1000 + pressure_min <= 1005`: отмена `82.1%`;
+- `SW/W + gust < 60 + precip <= 2`: выполнение `84.6%`, но выборка маленькая (`13` дней).
+
+Вывод:
+
+- направление ветра стоит добавить в `WeatherSnapshot` и predictor;
+- `SW`/`W` могут быть слабым положительным фактором при отсутствии других рисков;
+- `E/SE` при сильном ветре, низком давлении или низкой видимости — сильный отрицательный режим;
+- важна именно комбинация, а не направление само по себе.
+
+### 9.3. Human-suggested pressure hypothesis
+
+Гипотезу про давление также предложил человек, Владимир.
+
+На момент разбора pressure есть в погодном snapshot, но почти не используется в решении:
+
+- `WeatherSnapshot.pressure_msl` есть;
+- `backend/app/services/weather.py` агрегирует pressure;
+- `backend/app/services/predictor.py` не дает самостоятельного штрафа/бонуса по давлению.
+
+Найденные связи по Менделеево:
+
+- `pressure_min <= 995`: отмена `69.2%`;
+- `995 < pressure_min <= 1000`: отмена `47.5%`;
+- `1000 < pressure_min <= 1005`: отмена `53.5%`;
+- `1005 < pressure_min <= 1010`: отмена `44.1%`;
+- `1010 < pressure_min <= 1015`: отмена `41.5%`;
+- `pressure_min > 1015`: отмена `33.3%`, выполнение `66.7%`.
+
+Полезные комбинации:
+
+- `pressure <= 1000 + wind >= 25`: отмена `63.9%`;
+- `pressure <= 1000 + precip > 2`: отмена `66.3%`;
+- `pressure <= 1000 + low_cloud >= 75`: отмена `70.4%`;
+- `pressure <= 1005 + fog_high + wind >= 25`: отмена `72.2%`;
+- `pressure <= 1005 + fog_high + precip > 2`: отмена `71.8%`;
+- `pressure > 1015 + fog_low + gust < 60`: выполнение `84.3%`.
+
+Вывод:
+
+- давление не является одиночной "кнопкой отмены";
+- низкое давление усиливает плохие режимы с туманом, низкой облачностью, ветром и осадками;
+- высокое давление в сочетании с low fog и слабыми порывами дает хороший режим для `yes`.
+
+### 9.4. Humidity + wind / dew point spread
+
+Влажность сама по себе слабее, чем хотелось бы. Но сочетание влажности и ветра заметно сильнее.
+
+Менделеево:
+
+- `humidity < 85 + wind < 20`: выполнение `78.9%`;
+- `humidity >= 92 + wind < 20`: отмена `40.6%`;
+- `humidity >= 92 + wind >= 25`: отмена `69.0%`;
+- `humidity >= 95 + wind >= 25`: отмена `70.2%`;
+- `humidity >= 92 + gust >= 72`: отмена `68.0%`.
+
+Интерпретация:
+
+- высокая влажность без сильного ветра не всегда плохой признак;
+- высокая влажность + сильный ветер/порывы похожи на режим, где аэропорт чаще не принимает рейс;
+- текущий predictor уже учитывает humidity и dew point spread, но слишком независимо от ветра.
+
+### 9.5. "Good weather" regimes
+
+Найдены режимы, где можно увереннее говорить `yes`.
+
+Примеры:
+
+- `fog_low + gust < 60`: выполнение `80.7%`, выборка `109`;
+- `fog_low + low_cloud < 50 + gust < 60`: выполнение `83.1%`;
+- `pressure > 1015 + fog_low + gust < 60`: выполнение `84.3%`;
+- `humidity < 85 + wind < 20`: выполнение `78.9%`;
+- `SW overall`: выполнение `78.9%`.
+
+Эти признаки стоит использовать как положительные поправки, но аккуратно:
+
+- не превращать любой `SW` в автоматическое `yes`;
+- не давать "хорошему" режиму перекрывать уже известный статус табло;
+- учитывать, что часть выборок маленькая.
+
+### 9.6. Weather-only ceiling check
+
+Чтобы не обмануть себя точечными правилами, был сделан простой sanity-check:
+
+- только погодные признаки;
+- простое decision-tree-like разбиение;
+- проверка по отложенным годам.
+
+Результат:
+
+- отдельные weather regimes дают `80%+` precision на подвыборках;
+- но weather-only модель на всех днях не дает `80%` качества;
+- leave-one-year-out weighted accuracy около `58%`;
+- chronological split `train<=2023`, `test>=2024` ломается из-за сильного сдвига базовой частоты отмен.
+
+Интерпретация:
+
+- 80% на всех днях только погодой из текущих daily aggregates пока не подтверждается;
+- 80% достижимы для "уверенных погодных режимов";
+- оставшаяся серая зона требует board status, расписания, свежих forecast snapshots и, возможно, более точной погодной точки/источника.
+
+### 9.7. Practical predictor implications
+
+Кандидаты на следующие изменения в predictor:
+
+1. Добавить `wind_direction_10m` в `WeatherSnapshot`, forecast monitor и prediction logs.
+2. Добавить давление как явный фактор:
+   - отрицательный режим при `pressure_msl` низком, особенно вместе с fog/high low cloud/precip/wind;
+   - положительный режим при высоком pressure + low fog + слабые порывы.
+3. Перейти от независимых штрафов к interaction rules:
+   - humidity + wind/gust;
+   - pressure + fog + wind;
+   - pressure + fog + precipitation;
+   - E/SE + wind;
+   - SW/W + weak gust + low precipitation.
+4. В UI/объяснениях разделять прогноз на:
+   - weather-confident yes;
+   - weather-confident no;
+   - gray zone, где нужен статус табло и оперативный мониторинг.
+5. Не обещать "точность 80%" глобально, пока она не подтверждена leakage-safe backtest.
+
+Принцип:
+
+> Хорошие идеи с ветром, направлением ветра и давлением пришли от человека; задача модели и анализа — не заменить эту интуицию, а честно проверить ее на данных и превратить устойчивые находки в аккуратные признаки.
+
+### 9.8. Counterfactual: weather-only baseline without flight history
+
+Гипотеза:
+
+- проверить, что будет, если на периоде запуска сервиса убрать из прогноза историческую базу вылетов/отмен;
+- оставить погодную поправку из сохраненных forecast snapshots;
+- вместо history base поставить нейтральную точку `0.50`.
+
+Период проверки:
+
+- run dates: `2026-05-23` -> `2026-06-09`;
+- target dates: `2026-05-23` -> `2026-06-09`;
+- horizons: `0` -> `15`;
+- evaluated rows: `228`;
+- facts by corrected same-day board logic: `151 completed`, `77 cancelled`.
+
+Метод:
+
+```text
+logged_probability = history_base + weather_adjustment
+history_base = 0.65 * historical_probability + 0.35 * decade_probability
+weather_adjustment = logged_probability - history_base
+weather_only_probability = 0.50 + weather_adjustment
+```
+
+Итог:
+
+```text
+with history:
+  accuracy: 35.1%
+  yes: 57
+  no: 171
+  false_yes: 27
+  false_no: 121
+  brier: 0.303
+  avg_probability: 0.446
+
+weather-only neutral 0.50:
+  accuracy: 33.3%
+  yes: 25
+  no: 203
+  false_yes: 13
+  false_no: 139
+  brier: 0.3395
+  avg_probability: 0.369
+```
+
+Вывод:
+
+- история не просто "портит" прогноз и тянет к `yes`;
+- история сейчас является стартовой точкой вероятности и часто спасает от чрезмерно пессимистичного weather-only прогноза;
+- без истории модель почти перестает говорить `yes`, снижает false yes, но сильно увеличивает false no;
+- значит, историю полностью убирать нельзя;
+- правильнее ослаблять history base только в сильных погодных bad regimes и при strong board/schedule evidence.
+
+Same-day июньские примеры:
+
+```text
+2026-06-03 completed:
+  with_history=0.380 no
+  weather_only=0.315 no
+
+2026-06-04 completed:
+  with_history=0.599 yes
+  weather_only=0.540 no
+
+2026-06-05 completed:
+  with_history=0.611 yes
+  weather_only=0.545 no
+
+2026-06-06 cancelled:
+  with_history=0.614 yes
+  weather_only=0.545 no
+
+2026-06-08 cancelled:
+  with_history=0.663 yes
+  weather_only=0.595 yes
+
+2026-06-09 cancelled:
+  with_history=0.655 yes
+  weather_only=0.575 no
+```
+
+Интерпретация:
+
+- на `2026-06-06` и `2026-06-09` weather-only был бы лучше;
+- на `2026-06-04` и `2026-06-05` weather-only сломал бы правильный `yes`;
+- проблема не в самом факте истории, а в том, что history base и weather adjustment сейчас складываются слишком линейно;
+- следующая версия predictor должна использовать history как prior, но позволять сильным погодным режимам и табло сильнее менять posterior.
+
+### 9.9. Experimental 0-100 weather-only operability score
+
+Следующая проверка была сделана после уточнения идеи: нужна не поправка к вероятности, а самостоятельный скоринг `0-99/100`, где `score >= threshold` означает `completed`, а `score < threshold` означает `cancelled`.
+
+Для этого добавлен отдельный экспериментальный скрипт:
+
+```text
+pipelines/evaluation/weather_only_score_experiment.py
+```
+
+Важно:
+
+- скрипт не трогает production predictor;
+- это исследовательский weather-only score;
+- он использует почасовую погоду Open-Meteo из export за сам день, поэтому это не честный forecast-backtest на момент прогноза, а проверка способности правил описать фактический погодный режим;
+- история вылетов/отмен не используется;
+- если в board есть расписание вылетов на дату, окно берется вокруг него; иначе fallback window `08:00-20:00`;
+- для даты выбирается лучшее двухчасовое погодное окно внутри flight window.
+
+Компоненты score:
+
+- видимость;
+- низкая облачность;
+- влажность + разница температуры и точки росы;
+- скорость ветра и порывы;
+- направление ветра;
+- осадки;
+- давление;
+- weather code.
+
+Команда:
+
+```bash
+python pipelines/evaluation/weather_only_score_experiment.py
+```
+
+Период:
+
+- `2026-05-23` -> `2026-06-09`;
+- evaluated days: `18`;
+- факты: `12 completed`, `6 cancelled`.
+
+Результат при threshold `50`:
+
+```text
+accuracy: 66.7%
+yes: 16
+no: 2
+false_yes: 5
+false_no: 1
+```
+
+Daily scores:
+
+```text
+2026-05-23 completed score=95.0 yes
+2026-05-24 completed score=100.0 yes
+2026-05-25 cancelled score=70.5 yes
+2026-05-26 cancelled score=75.5 yes
+2026-05-27 cancelled score=78.0 yes
+2026-05-28 completed score=40.0 no
+2026-05-29 completed score=67.0 yes
+2026-05-30 completed score=83.0 yes
+2026-05-31 completed score=96.0 yes
+2026-06-01 completed score=92.5 yes
+2026-06-02 completed score=92.0 yes
+2026-06-03 completed score=66.5 yes
+2026-06-04 completed score=76.0 yes
+2026-06-05 completed score=68.0 yes
+2026-06-06 cancelled score=76.5 yes
+2026-06-07 completed score=79.0 yes
+2026-06-08 cancelled score=84.5 yes
+2026-06-09 cancelled score=39.0 no
+```
+
+Threshold sweep:
+
+```text
+threshold  accuracy  yes  false_yes  false_no
+40         72.2%     17   5          0
+50         66.7%     16   5          1
+60         66.7%     16   5          1
+70         50.0%     13   5          4
+80         61.1%     7    1          6
+85         61.1%     5    0          7
+90         61.1%     5    0          7
+```
+
+Интерпретация:
+
+- самостоятельный погодный score имеет смысл как исследовательская форма;
+- он лучше отражает идею "есть ли летное окно по погоде", чем текущая `weather_adjustment`;
+- при низком пороге score ловит почти все реальные вылеты, включая `2026-06-03`;
+- но он дает много ложных `yes` на отменах `2026-05-25`, `2026-05-26`, `2026-05-27`, `2026-06-06`, `2026-06-08`;
+- это значит, что часть отмен выглядит не объяснимой текущей фактической погодой Open-Meteo в найденном окне;
+- для production такой score нельзя использовать один, но его можно использовать как новый weather module, который затем корректируется расписанием, табло и strong bad-regime rules.
+
+### 9.10. Historical daily backtest of weather-only score
+
+После локального успеха на коротком периоде `2026-05-23` -> `2026-06-09` был сделан исторический sanity-check.
+
+Ограничение:
+
+- полного исторического hourly-файла за `2017-2026` в repo нет;
+- доступен `training_dataset_v1.csv` с daily weather aggregates;
+- поэтому это не полноценный hourly-window backtest, а daily approximation of weather-only score.
+
+Добавлен скрипт:
+
+```text
+pipelines/evaluation/weather_only_daily_backtest.py
+```
+
+Команда:
+
+```bash
+python pipelines/evaluation/weather_only_daily_backtest.py --use-veto
+```
+
+Данные:
+
+- rows: `761`;
+- `completed`: `411`;
+- `cancelled`: `350`;
+- score использует только daily-погоду Менделеево;
+- история вылетов/отмен не используется.
+
+Лучший full-sample результат:
+
+```text
+threshold=49
+use_veto=True
+accuracy=64.0%
+yes=447
+no=314
+false_yes=155
+false_no=119
+avg_score=56.6
+```
+
+По годам для best full-sample:
+
+```text
+2018 accuracy=67.0%
+2019 accuracy=61.1%
+2020 accuracy=56.3%
+2021 accuracy=71.6%
+2022 accuracy=56.2%
+2023 accuracy=61.0%
+2024 accuracy=68.5%
+2025 accuracy=58.5%
+2026 accuracy=70.0%
+```
+
+Leave-one-year-out threshold tuning:
+
+```text
+weighted_accuracy=57.0%
+false_yes=170
+false_no=149
+```
+
+Score bands show useful ranking:
+
+```text
+score 0-30:    completed_rate=26.8%
+score 30-40:   completed_rate=30.5%
+score 40-50:   completed_rate=45.2%
+score 50-60:   completed_rate=54.2%
+score 60-70:   completed_rate=61.0%
+score 70-80:   completed_rate=68.7%
+score 80-90:   completed_rate=72.5%
+score 90-101:  completed_rate=87.5%
+```
+
+Вывод:
+
+- weather-only score действительно ранжирует дни: чем выше score, тем выше completion rate;
+- но как бинарный прогноз на всей истории он не дает `80%`;
+- июньский результат `83.3%` был локальным и не должен считаться доказанной точностью;
+- score полезен как weather operability module / calibration feature;
+- для качества сервиса нужна комбинация: weather score + history prior + schedule/board evidence + отдельные strong bad-regime rules.
