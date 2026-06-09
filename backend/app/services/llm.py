@@ -458,7 +458,7 @@ def _weather_detail_lines(weather: WeatherSnapshot) -> list[str]:
 
     visibility = weather.flight_window_visibility if weather.flight_window_visibility is not None else weather.visibility
     if visibility is not None:
-        lines.append(f"видимость - {_visibility_label(visibility)}, около {_format_number(visibility, ' м')}")
+        lines.append(f"видимость - около {_format_number(visibility, ' м')}")
 
     cloud_low = (
         weather.flight_window_cloud_cover_low
