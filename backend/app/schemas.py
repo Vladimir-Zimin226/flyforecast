@@ -199,6 +199,7 @@ class WeatherSnapshot(BaseModel):
     precipitation: float | None = None
     wind_speed_10m: float | None = None
     wind_gusts_10m: float | None = None
+    wind_direction_10m: float | None = None
     weather_code: float | None = None
     visibility: float | None = None
     fog_low_cloud_risk_score: float | None = None

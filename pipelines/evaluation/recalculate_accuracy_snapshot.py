@@ -55,6 +55,7 @@ def snapshot_weather(row: sqlite3.Row) -> WeatherSnapshot:
         precipitation=row["precipitation"],
         wind_speed_10m=row["wind_speed_10m"],
         wind_gusts_10m=row["wind_gusts_10m"],
+        wind_direction_10m=row["wind_direction_10m"] if "wind_direction_10m" in row.keys() else None,
         weather_code=row["weather_code"],
         visibility=row["visibility"],
         fog_low_cloud_risk_score=row["fog_low_cloud_risk_score"],

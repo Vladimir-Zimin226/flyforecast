@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import math
 import sqlite3
 from contextlib import closing
 from datetime import date, datetime, timezone
@@ -31,6 +32,7 @@ HOURLY_FIELDS = [
     "precipitation",
     "wind_speed_10m",
     "wind_gusts_10m",
+    "wind_direction_10m",
     "weather_code",
     "visibility",
 ]
@@ -82,6 +84,18 @@ def _mode(values: list[float]) -> float | None:
     return float(max(set(values), key=values.count)) if values else None
 
 
+def _mean_wind_direction(values: list[float]) -> float | None:
+    if not values:
+        return None
+
+    sin_sum = sum(math.sin(math.radians(value)) for value in values)
+    cos_sum = sum(math.cos(math.radians(value)) for value in values)
+    if sin_sum == 0 and cos_sum == 0:
+        return None
+
+    return round((math.degrees(math.atan2(sin_sum, cos_sum)) + 360) % 360, 2)
+
+
 def _float_or_none(value: object) -> float | None:
     if value is None:
         return None
@@ -102,6 +116,8 @@ def _aggregate_weather_rows(rows: list[dict[str, float | int | None]]) -> dict[s
         ]
         if field == "visibility":
             aggregated[field] = _quantile(values, 0.25)
+        elif field == "wind_direction_10m":
+            aggregated[field] = _mean_wind_direction(values)
         elif field == "weather_code":
             aggregated[field] = _mode(values)
         else:
@@ -258,6 +274,7 @@ def _build_weather_snapshot(
         precipitation=aggregated.get("precipitation"),
         wind_speed_10m=aggregated.get("wind_speed_10m"),
         wind_gusts_10m=aggregated.get("wind_gusts_10m"),
+        wind_direction_10m=aggregated.get("wind_direction_10m"),
         weather_code=aggregated.get("weather_code"),
         visibility=aggregated.get("visibility"),
         fog_low_cloud_risk_score=fog_low_cloud_risk_score,

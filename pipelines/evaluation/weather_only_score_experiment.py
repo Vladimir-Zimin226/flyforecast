@@ -23,6 +23,7 @@ class DayScore:
     best_hours: tuple[int, ...]
     best_hour_scores: tuple[float, ...]
     prediction: str
+    veto_reason: str | None = None
 
 
 def float_or_none(value: str | None) -> float | None:
@@ -231,6 +232,46 @@ def hourly_weather_score(row: dict[str, str]) -> tuple[float, dict[str, float]]:
     return sum(parts.values()), parts
 
 
+def relaxed_veto_reason(
+    window_rows: tuple[dict[str, str], ...],
+    *,
+    best_score: float,
+    hour_scores: tuple[float, ...],
+) -> str | None:
+    if not window_rows:
+        return "no_weather_window"
+
+    visibilities = [value for row in window_rows if (value := float_or_none(row.get("visibility"))) is not None]
+    humidities = [
+        value for row in window_rows if (value := float_or_none(row.get("relative_humidity_2m"))) is not None
+    ]
+    precipitations = [
+        value for row in window_rows if (value := float_or_none(row.get("precipitation"))) is not None
+    ]
+    pressures = [value for row in window_rows if (value := float_or_none(row.get("pressure_msl"))) is not None]
+
+    min_score = min(hour_scores) if hour_scores else best_score
+    max_humidity = max(humidities) if humidities else None
+    min_visibility = min(visibilities) if visibilities else None
+    max_precipitation = max(precipitations) if precipitations else 0
+    min_pressure = min(pressures) if pressures else None
+    score_drop = best_score - min_score
+
+    if min_score < 50:
+        return "weakest_hour_score_below_50"
+
+    has_companion_risk = (
+        (min_visibility is not None and min_visibility < 3000)
+        or max_precipitation > 0.5
+        or (min_pressure is not None and min_pressure < 1005)
+        or score_drop > 20
+    )
+    if max_humidity is not None and max_humidity > 90 and has_companion_risk:
+        return "humidity_with_companion_risk"
+
+    return None
+
+
 def load_csv_by_date(path: Path, date_key: str) -> dict[str, list[dict[str, str]]]:
     rows_by_date: dict[str, list[dict[str, str]]] = defaultdict(list)
     with path.open(newline="", encoding="utf-8-sig") as handle:
@@ -246,10 +287,11 @@ def score_day(
     hourly_rows: list[dict[str, str]],
     board_rows: list[dict[str, str]],
     threshold: float,
+    use_relaxed_veto: bool = False,
 ) -> DayScore:
     window_start, window_end, scheduled_hours = scheduled_departure_window(board_rows)
 
-    candidates: list[tuple[int, float]] = []
+    candidates: list[tuple[int, float, dict[str, str]]] = []
     for row in hourly_rows:
         time = row.get("time", "")
         if "T" not in time:
@@ -257,10 +299,10 @@ def score_day(
         hour = int(time.split("T", 1)[1].split(":", 1)[0])
         if window_start <= hour <= window_end:
             score, _ = hourly_weather_score(row)
-            candidates.append((hour, score))
+            candidates.append((hour, score, row))
 
     best_score = 0.0
-    best_window: tuple[tuple[int, float], ...] = ()
+    best_window: tuple[tuple[int, float, dict[str, str]], ...] = ()
     for index, current in enumerate(candidates):
         window = [current]
         if index + 1 < len(candidates) and candidates[index + 1][0] == current[0] + 1:
@@ -272,6 +314,17 @@ def score_day(
 
     outcome = corrected_same_day_outcome(board_rows, flight_date) or "unknown"
     prediction = "completed" if best_score >= threshold else "cancelled"
+    best_hour_scores = tuple(round(item[1], 1) for item in best_window)
+    veto_reason = None
+    if prediction == "completed" and use_relaxed_veto:
+        veto_reason = relaxed_veto_reason(
+            tuple(item[2] for item in candidates),
+            best_score=best_score,
+            hour_scores=tuple(item[1] for item in candidates),
+        )
+        if veto_reason is not None:
+            prediction = "cancelled"
+
     return DayScore(
         date=flight_date,
         outcome=outcome,
@@ -280,8 +333,9 @@ def score_day(
         scheduled_departure_hours=scheduled_hours,
         score=round(best_score, 1),
         best_hours=tuple(item[0] for item in best_window),
-        best_hour_scores=tuple(round(item[1], 1) for item in best_window),
+        best_hour_scores=best_hour_scores,
         prediction=prediction,
+        veto_reason=veto_reason,
     )
 
 
@@ -304,6 +358,7 @@ def print_summary(scores: list[DayScore], threshold: float) -> None:
 def print_threshold_sweep(scores: list[DayScore]) -> None:
     evaluated = [score for score in scores if score.outcome in {"completed", "cancelled"}]
     print("\nthreshold_sweep")
+    print("# raw score only; relaxed veto is applied only to the configured threshold summary")
     print("threshold,accuracy,yes,false_yes,false_no")
     for threshold in range(40, 91, 5):
         correct = 0
@@ -329,6 +384,7 @@ def main() -> None:
     parser.add_argument("--start-date", default="2026-05-23")
     parser.add_argument("--end-date", default="2026-06-09")
     parser.add_argument("--threshold", type=float, default=50)
+    parser.add_argument("--use-relaxed-veto", action="store_true")
     args = parser.parse_args()
 
     hourly_by_date = load_csv_by_date(args.hourly_path, "date")
@@ -344,12 +400,14 @@ def main() -> None:
                 hourly_rows=hourly_by_date[flight_date],
                 board_rows=board_by_date.get(flight_date, []),
                 threshold=args.threshold,
+                use_relaxed_veto=args.use_relaxed_veto,
             )
         )
 
     print_summary(scores, args.threshold)
+    print(f"relaxed_veto={args.use_relaxed_veto}")
     print("\ndaily_scores")
-    print("date,outcome,score,prediction,window,scheduled_departures,best_hours,best_hour_scores")
+    print("date,outcome,score,prediction,window,scheduled_departures,best_hours,best_hour_scores,veto_reason")
     for score in scores:
         if score.outcome not in {"completed", "cancelled"}:
             continue
@@ -364,6 +422,7 @@ def main() -> None:
                     "|".join(f"{hour:02d}" for hour in score.scheduled_departure_hours) or "-",
                     "|".join(f"{hour:02d}" for hour in score.best_hours) or "-",
                     "|".join(f"{value:.1f}" for value in score.best_hour_scores) or "-",
+                    score.veto_reason or "-",
                 ]
             )
         )

@@ -258,7 +258,7 @@ async def predict(
             "temperature_2m=%s humidity=%s dew_point_2m=%s pressure_msl=%s "
             "cloud_cover=%s cloud_cover_low=%s visibility=%s weather_code=%s "
             "dew_point_spread=%s fog_low_cloud_risk=%s precipitation=%s "
-            "wind_speed_10m=%s wind_gusts_10m=%s aggregation_window=%s-%s hours=%s "
+            "wind_speed_10m=%s wind_gusts_10m=%s wind_direction_10m=%s aggregation_window=%s-%s hours=%s "
             "flight_window_available=%s flight_window=%s-%s flight_window_hours=%s "
             "flight_window_visibility=%s flight_window_fog_risk=%s"
         ),
@@ -280,6 +280,7 @@ async def predict(
         weather.precipitation,
         weather.wind_speed_10m,
         weather.wind_gusts_10m,
+        weather.wind_direction_10m,
         weather.aggregation_window_start_hour,
         weather.aggregation_window_end_hour,
         weather.aggregation_window_hours,
@@ -483,6 +484,7 @@ def log_prediction(
         "flight_window_fog_low_cloud_risk_level": result.weather.flight_window_fog_low_cloud_risk_level,
         "wind_speed_10m": result.weather.wind_speed_10m,
         "wind_gusts_10m": result.weather.wind_gusts_10m,
+        "wind_direction_10m": result.weather.wind_direction_10m,
         "schedule_available": result.schedule.available if result.schedule else None,
         "schedule_source": result.schedule.source if result.schedule else None,
         "schedule_reason": result.schedule.reason if result.schedule else None,

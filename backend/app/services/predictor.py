@@ -3,7 +3,7 @@ from datetime import date, datetime
 from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
 
 
-MODEL_VERSION = "mvp-baseline-008"
+MODEL_VERSION = "mvp-baseline-009"
 DATA_VERSION = "telegram-v2-plus-historical-board-manual-v3-2026-05-20"
 
 DISCLAIMER = (
@@ -17,7 +17,14 @@ def get_horizon_days(target_date: date) -> int:
     return (target_date - datetime.now().date()).days
 
 
-def get_confidence(horizon_days: int, weather: WeatherSnapshot, history: HistoricalSnapshot) -> str:
+def get_confidence(
+    horizon_days: int,
+    weather: WeatherSnapshot,
+    history: HistoricalSnapshot,
+    schedule: FlightScheduleSnapshot | None = None,
+) -> str:
+    if schedule is not None and schedule.available and (schedule.moved_next_day or schedule.completed_same_day):
+        return "high"
     if horizon_days <= 10 and weather.available and history.similar_days_count >= 20:
         return "medium"
     if horizon_days <= 46 and history.similar_days_count >= 20:
@@ -39,6 +46,53 @@ def is_weather_window_too_late_for_schedule(
 
     latest_useful_start_hour = min(schedule.first_departure_hour + 1, 23)
     return weather.flight_window_start_hour > latest_useful_start_hour
+
+
+def wind_sector(degrees: float | None) -> str | None:
+    if degrees is None:
+        return None
+    sectors = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
+    return sectors[int(((degrees + 22.5) % 360) // 45)]
+
+
+def has_compound_humidity_risk(weather: WeatherSnapshot) -> bool:
+    if weather.relative_humidity_2m is None or weather.relative_humidity_2m < 92:
+        return False
+
+    visibility = weather.flight_window_visibility if weather.flight_window_visibility is not None else weather.visibility
+    low_visibility = visibility is not None and visibility <= 3000
+    meaningful_precipitation = weather.precipitation is not None and weather.precipitation >= 0.5
+    low_pressure = weather.pressure_msl is not None and weather.pressure_msl <= 1005
+    closed_dew_point = weather.dew_point_spread is not None and weather.dew_point_spread <= 1
+    windy_low_cloud = (
+        weather.cloud_cover_low is not None
+        and weather.cloud_cover_low >= 95
+        and weather.wind_speed_10m is not None
+        and weather.wind_speed_10m >= 25
+    )
+
+    return (
+        low_visibility
+        or meaningful_precipitation
+        or low_pressure
+        or windy_low_cloud
+        or (closed_dew_point and weather.fog_low_cloud_risk_level == "high")
+    )
+
+
+def has_good_late_clearing_support(weather: WeatherSnapshot, late_schedule_window: bool) -> bool:
+    if not weather.flight_window_available or late_schedule_window:
+        return False
+
+    visibility = weather.flight_window_visibility if weather.flight_window_visibility is not None else weather.visibility
+    return (
+        visibility is not None
+        and visibility >= 8000
+        and (weather.pressure_msl is None or weather.pressure_msl > 1010)
+        and (weather.precipitation is None or weather.precipitation <= 0.2)
+        and (weather.wind_gusts_10m is None or weather.wind_gusts_10m < 60)
+        and not has_compound_humidity_risk(weather)
+    )
 
 
 def calculate_weather_adjustment(
@@ -69,6 +123,9 @@ def calculate_weather_adjustment(
         low_visibility and weather.fog_low_cloud_risk_level in {"medium", "high"}
     )
     late_schedule_window = is_weather_window_too_late_for_schedule(weather, schedule)
+    compound_humidity_risk = has_compound_humidity_risk(weather)
+    good_late_clearing_support = has_good_late_clearing_support(weather, late_schedule_window)
+    direction = wind_sector(weather.wind_direction_10m)
 
     if weather.flight_window_available and not late_schedule_window:
         adjustment += 0.08
@@ -86,11 +143,11 @@ def calculate_weather_adjustment(
         elif weather.wind_gusts_10m >= 55:
             adjustment -= 0.03
 
-    if weather.relative_humidity_2m is not None:
+    if weather.relative_humidity_2m is not None and compound_humidity_risk:
         if weather.relative_humidity_2m >= 97:
-            adjustment -= 0.03
+            adjustment -= 0.06
         elif weather.relative_humidity_2m >= 92:
-            adjustment -= 0.01
+            adjustment -= 0.035
 
     if weather.cloud_cover is not None and weather.cloud_cover >= 95:
         adjustment -= 0.01
@@ -117,7 +174,7 @@ def calculate_weather_adjustment(
 
     if weather.dew_point_spread is not None:
         if weather.dew_point_spread <= 1:
-            adjustment -= 0.03
+            adjustment -= 0.04 if compound_humidity_risk else 0.015
         elif weather.dew_point_spread <= 2:
             adjustment -= 0.015
 
@@ -129,8 +186,36 @@ def calculate_weather_adjustment(
     if weather.precipitation is not None and weather.precipitation >= 3:
         adjustment -= 0.03
 
+    if weather.pressure_msl is not None:
+        if weather.pressure_msl <= 995:
+            adjustment -= 0.07
+        elif weather.pressure_msl <= 1000:
+            adjustment -= 0.05
+        elif weather.pressure_msl <= 1005:
+            adjustment -= 0.035 if (compound_humidity_risk or severe_visibility_risk) else 0.01
+        elif weather.pressure_msl > 1015 and not severe_visibility_risk:
+            adjustment += 0.03
+        elif weather.pressure_msl > 1010 and good_late_clearing_support:
+            adjustment += 0.015
+
+    if direction in {"E", "SE"}:
+        if (weather.wind_speed_10m is not None and weather.wind_speed_10m >= 25) or (
+            weather.wind_gusts_10m is not None and weather.wind_gusts_10m >= 65
+        ):
+            adjustment -= 0.05
+        elif compound_humidity_risk or severe_visibility_risk:
+            adjustment -= 0.02
+    elif direction in {"SW", "W"} and not severe_visibility_risk:
+        if (
+            (weather.wind_gusts_10m is None or weather.wind_gusts_10m < 60)
+            and (weather.precipitation is None or weather.precipitation <= 0.2)
+        ):
+            adjustment += 0.02
+
     if weather.flight_window_available and not severe_visibility_risk and not late_schedule_window and adjustment < 0.03:
         adjustment = 0.03
+    if good_late_clearing_support and adjustment < 0.08:
+        adjustment = 0.08
 
     return adjustment
 
@@ -284,8 +369,15 @@ def get_factor_summary(
             factors.append(f"разница температуры и точки росы: {weather.dew_point_spread} °C")
         if weather.wind_gusts_10m is not None:
             factors.append(f"порывы ветра по прогнозу: до {_format_wind_ms(weather.wind_gusts_10m)}")
+        if weather.wind_direction_10m is not None:
+            sector = wind_sector(weather.wind_direction_10m)
+            factors.append(f"направление ветра по прогнозу: {sector or round(weather.wind_direction_10m)}")
+        if weather.pressure_msl is not None:
+            factors.append(f"давление по прогнозу: {round(weather.pressure_msl)} гПа")
         if weather.relative_humidity_2m is not None:
             factors.append(f"средняя влажность по прогнозу: {weather.relative_humidity_2m}%")
+            if has_compound_humidity_risk(weather):
+                factors.append("высокая влажность совпадает с другими погодными рисками")
         if weather.cloud_cover is not None:
             factors.append(f"средняя облачность по прогнозу: {weather.cloud_cover}%")
     else:

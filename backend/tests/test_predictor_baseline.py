@@ -2,7 +2,7 @@ import unittest
 
 from app.config import Settings
 from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
-from app.services.predictor import calculate_probability, make_decision
+from app.services.predictor import calculate_probability, has_compound_humidity_risk, make_decision
 from app.services.weather import _is_flight_opportunity_hour
 
 
@@ -231,6 +231,58 @@ class PredictorBaselineTests(unittest.TestCase):
         }
 
         self.assertFalse(_is_flight_opportunity_hour(row, settings))
+
+    def test_humidity_alone_does_not_create_compound_risk(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=True,
+            flight_window_visibility=12000,
+            relative_humidity_2m=94,
+            dew_point_spread=1.4,
+            pressure_msl=1017,
+            precipitation=0,
+            cloud_cover_low=100,
+            wind_speed_10m=18,
+            wind_gusts_10m=42,
+            weather_code=51,
+            fog_low_cloud_risk_level="high",
+        )
+
+        self.assertFalse(has_compound_humidity_risk(weather))
+        probability = calculate_probability(
+            horizon_days=0,
+            weather=weather,
+            history=seasonal_late_may_history(),
+        )
+
+        self.assertEqual(make_decision(probability, horizon_days=0), "yes")
+
+    def test_humidity_with_low_visibility_creates_compound_risk(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=False,
+            visibility=2500,
+            relative_humidity_2m=94,
+            dew_point_spread=0.8,
+            pressure_msl=1002,
+            precipitation=0.7,
+            cloud_cover_low=100,
+            wind_speed_10m=24,
+            wind_gusts_10m=50,
+            weather_code=51,
+            fog_low_cloud_risk_level="high",
+        )
+
+        self.assertTrue(has_compound_humidity_risk(weather))
+        probability = calculate_probability(
+            horizon_days=0,
+            weather=weather,
+            history=seasonal_late_may_history(),
+        )
+
+        self.assertEqual(make_decision(probability, horizon_days=0), "no")
 
 
 if __name__ == "__main__":
