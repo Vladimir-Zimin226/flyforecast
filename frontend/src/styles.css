@@ -569,6 +569,26 @@ button:disabled {
   font-weight: 950;
 }
 
+.weather-details-card {
+  padding: 14px 16px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.weather-details-card summary {
+  cursor: pointer;
+  color: var(--color-headline);
+  font-size: 14px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.weather-details-card .result-explanation {
+  margin: 12px 0 0;
+  white-space: pre-wrap;
+}
+
 .meta-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -880,17 +900,26 @@ button:disabled {
 
 .account-name {
   display: block;
-  overflow-wrap: anywhere;
+  overflow: hidden;
   color: var(--color-headline);
-  font-size: clamp(22px, 4vw, 32px);
+  font-size: clamp(18px, 4vw, 32px);
   font-weight: 900;
   line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .account-header .small {
   display: block;
-  overflow-wrap: anywhere;
+  overflow: hidden;
   margin-bottom: 0;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-email {
+  font-size: clamp(11px, 2.6vw, 13px);
 }
 
 .account-meta {

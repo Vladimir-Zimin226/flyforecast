@@ -27,6 +27,7 @@ class ExplanationTests(unittest.TestCase):
             flight_window_visibility=9200,
             flight_window_cloud_cover_low=25,
             wind_gusts_10m=31,
+            wind_direction_10m=250,
             relative_humidity_2m=74,
             dew_point_spread=4.2,
             weather_code=3,
@@ -45,12 +46,11 @@ class ExplanationTests(unittest.TestCase):
 
         self.assertIn("Да", explanation)
         self.assertIn("Данные погоды:", explanation)
-        self.assertIn("есть летное окно примерно с 10:00 до 16:00", explanation)
-        self.assertIn("видимость хорошая, около 9200 м", explanation)
-        self.assertIn("низкая облачность небольшая, 25%", explanation)
-        self.assertIn("ветер умеренный: порывы до 8.6 м/с", explanation)
-        self.assertIn("туман маловероятен", explanation)
+        self.assertIn("видимость - хорошая, около 9200 м", explanation)
+        self.assertIn("низкая облачность - 25%", explanation)
+        self.assertIn("ветер - порывы до 8.6 м/с, направление западный (W)", explanation)
         self.assertIn("вероятность вылета — 72%", explanation)
+        self.assertNotIn("туман -", explanation)
         self.assertNotIn("Исторически", explanation)
         self.assertNotIn("85 выполненных", explanation)
         self.assertNotIn("55 отмененных", explanation)
@@ -81,10 +81,10 @@ class ExplanationTests(unittest.TestCase):
         )
 
         self.assertIn("Нет", explanation)
-        self.assertIn("видимость низкая, около 240 м", explanation)
-        self.assertIn("наблюдается сильная низкая облачность, 100%", explanation)
-        self.assertIn("заметный ветер: порывы до 15.8 м/с", explanation)
-        self.assertIn("туман вероятнее", explanation)
+        self.assertIn("видимость - низкая, около 240 м", explanation)
+        self.assertIn("низкая облачность - 100%", explanation)
+        self.assertIn("ветер - порывы до 15.8 м/с", explanation)
+        self.assertIn("туман - да", explanation)
         self.assertIn("вероятность вылета — 41%", explanation)
         self.assertNotIn("Исторически", explanation)
 
@@ -122,12 +122,12 @@ class ExplanationTests(unittest.TestCase):
             ),
         )
 
-        self.assertIn("По погоде: есть летное окно", explanation)
+        self.assertIn("Данные погоды:", explanation)
         self.assertNotIn("08:00-20:00", explanation)
-        self.assertIn("видимость умеренная, около 1480 м", explanation)
-        self.assertIn("низкой облачности практически нет, всего 7%", explanation)
-        self.assertIn("ветер умеренный: порывы до 6.7 м/с", explanation)
-        self.assertIn("туман маловероятен по температуре и точке росы: разница 5.1 °C", explanation)
+        self.assertIn("видимость - умеренная, около 1480 м", explanation)
+        self.assertIn("низкая облачность - 7%", explanation)
+        self.assertIn("ветер - порывы до 6.7 м/с", explanation)
+        self.assertNotIn("туман -", explanation)
         self.assertNotIn("Исторически", explanation)
         self.assertNotIn("Это ориентир для планирования", explanation)
 
@@ -161,11 +161,10 @@ class ExplanationTests(unittest.TestCase):
             ),
         )
 
-        self.assertIn("устойчивое полетное окно не наблюдается", explanation)
-        self.assertIn("несмотря на отличную видимость около 15480 м", explanation)
-        self.assertIn("наблюдается сильная низкая облачность, 99%", explanation)
-        self.assertIn("сильный ветер: порывы до 19.3 м/с", explanation)
-        self.assertNotIn("видимость отличная, около 15480 м, низкая облачность", explanation)
+        self.assertIn("видимость - отличная, около 15480 м", explanation)
+        self.assertIn("низкая облачность - 99%", explanation)
+        self.assertIn("ветер - порывы до 19.3 м/с", explanation)
+        self.assertIn("туман - возможно", explanation)
 
     def test_no_decision_with_formal_window_explains_remaining_risks(self) -> None:
         weather = WeatherSnapshot(
@@ -202,12 +201,11 @@ class ExplanationTests(unittest.TestCase):
             ),
         )
 
-        self.assertIn("летное окно есть, но погодные условия внутри него остаются рискованными", explanation)
-        self.assertIn("видимость низкая, около 280 м", explanation)
-        self.assertIn("сильная низкая облачность, 100%", explanation)
-        self.assertIn("ветер заметный: порывы до 13 м/с", explanation)
-        self.assertIn("туман возможен", explanation)
-        self.assertNotIn("По погоде: есть летное окно;", explanation)
+        self.assertIn("видимость - низкая, около 280 м", explanation)
+        self.assertIn("низкая облачность - 100%", explanation)
+        self.assertIn("ветер - порывы до 13 м/с", explanation)
+        self.assertIn("туман - да", explanation)
+        self.assertNotIn("По погоде", explanation)
 
     def test_board_cancelled_explanation_is_short_and_zero_percent(self) -> None:
         weather = WeatherSnapshot(source="test", available=True, flight_window_available=True)
@@ -229,9 +227,7 @@ class ExplanationTests(unittest.TestCase):
             schedule=schedule,
         )
 
-        self.assertIn("Нет", explanation)
-        self.assertIn("табло аэропорта", explanation)
-        self.assertIn("0%", explanation)
+        self.assertEqual(explanation, "По табло рейс отменен для этой даты.")
         self.assertNotIn("Данные погоды", explanation)
         self.assertNotIn("Исторически", explanation)
 

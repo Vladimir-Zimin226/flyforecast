@@ -7,21 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from gigachat import GigaChat
-
-from app.config import get_settings
 from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
-from app.services.predictor import (
-    DATA_VERSION,
-    DISCLAIMER,
-    MODEL_VERSION,
-    get_factor_summary,
-    is_weather_window_too_late_for_schedule,
-)
 
 
 logger = logging.getLogger("flyforecast.llm")
-PROMPT_VERSION = "explanation-v9-board-and-weather"
+PROMPT_VERSION = "explanation-v10-deterministic-weather"
 CACHE_SCHEMA_VERSION = 5
 FORBIDDEN_EXPLANATION_PATTERNS = [
     re.compile(pattern, re.IGNORECASE)
@@ -141,6 +131,23 @@ def _format_wind_ms(value_kmh: float | None) -> str | None:
     return _format_number(value_kmh / 3.6, " м/с")
 
 
+def _wind_direction_label(degrees: float | None) -> str | None:
+    if degrees is None:
+        return None
+    sectors = (
+        ("северный", "N"),
+        ("северо-восточный", "NE"),
+        ("восточный", "E"),
+        ("юго-восточный", "SE"),
+        ("южный", "S"),
+        ("юго-западный", "SW"),
+        ("западный", "W"),
+        ("северо-западный", "NW"),
+    )
+    label, code = sectors[int(((degrees + 22.5) % 360) // 45)]
+    return f"{label} ({code})"
+
+
 def _ru_day_phrase(count: int, singular: str, few: str, many: str) -> str:
     last_two = count % 100
     last = count % 10
@@ -233,6 +240,41 @@ def _dew_point_spread_text(dew_point_spread: float) -> str:
 
 def _explicit_fog_code(weather: WeatherSnapshot) -> bool:
     return weather.weather_code is not None and int(weather.weather_code) in {45, 48}
+
+
+def _weather_code(weather: WeatherSnapshot) -> int | None:
+    if weather.weather_code is None:
+        return None
+    return int(weather.weather_code)
+
+
+def _fog_status(weather: WeatherSnapshot) -> str | None:
+    if _explicit_fog_code(weather) or weather.fog_low_cloud_risk_level == "high":
+        return "да"
+    if weather.fog_low_cloud_risk_level == "medium" or (
+        weather.dew_point_spread is not None and weather.dew_point_spread <= 2
+    ):
+        return "возможно"
+    return None
+
+
+def _rain_status(weather: WeatherSnapshot) -> str | None:
+    code = _weather_code(weather)
+    precipitation = weather.precipitation
+    if code is not None and (51 <= code <= 67 or 80 <= code <= 82 or code in {95, 96, 99}):
+        return "да"
+    if precipitation is not None and precipitation >= 0.5:
+        return "да"
+    if precipitation is not None and precipitation > 0:
+        return "возможно"
+    return None
+
+
+def _snow_status(weather: WeatherSnapshot) -> str | None:
+    code = _weather_code(weather)
+    if code is not None and (71 <= code <= 77 or 85 <= code <= 86):
+        return "да"
+    return None
 
 
 def _flight_window_hours(weather: WeatherSnapshot) -> int | None:
@@ -408,13 +450,54 @@ def is_board_cancelled_for_target_date(schedule: FlightScheduleSnapshot | None) 
 
 
 def _board_cancelled_explanation(schedule: FlightScheduleSnapshot | None) -> str:
-    observed_text = ""
-    if schedule is not None and schedule.observed_at:
-        observed_text = f" Последнее обновление табло: {schedule.observed_at}."
-    return (
-        "Нет: по информации табло аэропорта рейс на выбранную дату уже перенесен "
-        f"или отменен для этой даты. Вероятность вылета для выбранного дня — 0%.{observed_text}"
+    return "По табло рейс отменен для этой даты."
+
+
+def _weather_detail_lines(weather: WeatherSnapshot) -> list[str]:
+    lines: list[str] = []
+
+    visibility = weather.flight_window_visibility if weather.flight_window_visibility is not None else weather.visibility
+    if visibility is not None:
+        lines.append(f"видимость - {_visibility_label(visibility)}, около {_format_number(visibility, ' м')}")
+
+    cloud_low = (
+        weather.flight_window_cloud_cover_low
+        if weather.flight_window_cloud_cover_low is not None
+        else weather.cloud_cover_low
     )
+    if cloud_low is not None:
+        lines.append(f"низкая облачность - {_format_percent(cloud_low)}")
+
+    wind_parts: list[str] = []
+    if weather.wind_gusts_10m is not None:
+        wind_parts.append(f"порывы до {_format_wind_ms(weather.wind_gusts_10m)}")
+    elif weather.wind_speed_10m is not None:
+        wind_parts.append(f"скорость около {_format_wind_ms(weather.wind_speed_10m)}")
+    wind_direction = _wind_direction_label(weather.wind_direction_10m)
+    if wind_direction:
+        wind_parts.append(f"направление {wind_direction}")
+    if wind_parts:
+        lines.append(f"ветер - {', '.join(wind_parts)}")
+
+    if weather.relative_humidity_2m is not None:
+        lines.append(f"влажность - {_format_percent(weather.relative_humidity_2m)}")
+
+    if weather.pressure_msl is not None:
+        lines.append(f"давление - {_format_number(weather.pressure_msl, ' гПа')}")
+
+    fog_status = _fog_status(weather)
+    if fog_status is not None:
+        lines.append(f"туман - {fog_status}")
+
+    rain_status = _rain_status(weather)
+    if rain_status is not None:
+        lines.append(f"дождь - {rain_status}")
+
+    snow_status = _snow_status(weather)
+    if snow_status is not None:
+        lines.append(f"снег - {snow_status}")
+
+    return lines
 
 
 def _weather_model_explanation(
@@ -425,29 +508,18 @@ def _weather_model_explanation(
 ) -> str:
     probability_percent = round(probability_flight * 100)
 
-    schedule_text = ""
-    if schedule is not None and schedule.available:
-        if schedule.completed_same_day:
-            schedule_text = "По последним строкам табло рейс на эту дату уже выполнялся. "
-        elif is_weather_window_too_late_for_schedule(weather, schedule):
-            schedule_text = (
-                "Найденное погодное окно начинается позже основного времени вылета по табло. "
-            )
-
-    if weather.flight_window_available is False:
-        weather_parts = [_no_flight_window_weather_text(weather)]
-    else:
-        weather_parts = [_weather_window_text(weather, decision), _weather_details_text(weather)]
-
-    should_add_fog_summary = weather.dew_point_spread is None or _explicit_fog_code(weather)
-    if should_add_fog_summary:
-        weather_parts.append(_fog_text(weather))
-
     decision_text = "Да" if decision == "yes" else "Нет"
-    conclusion = (
-        f"Исходя из этих факторов, вероятность вылета — {probability_percent}%."
+    weather_lines = _weather_detail_lines(weather)
+    if not weather_lines:
+        weather_lines = ["погодные показатели - данные источника неполные"]
+
+    return "\n".join(
+        [
+            f"{decision_text}. Данные погоды:",
+            *weather_lines,
+            f"Исходя из этих факторов, вероятность вылета — {probability_percent}%.",
+        ]
     )
-    return f"{decision_text}. {schedule_text}Данные погоды: {'; '.join(weather_parts)}. {conclusion}"
 
 
 def fallback_explanation(
@@ -518,129 +590,13 @@ def generate_user_explanation(
     history: HistoricalSnapshot,
     schedule: FlightScheduleSnapshot | None = None,
 ) -> str:
-    settings = get_settings()
-    cache_payload = {
-        "schema": CACHE_SCHEMA_VERSION,
-        "prompt_version": PROMPT_VERSION,
-        "giga_model": settings.giga_model,
-        "model_version": MODEL_VERSION,
-        "data_version": DATA_VERSION,
-        "target_date": target_date,
-        "decision": decision,
-        "probability_flight": probability_flight,
-        "confidence": confidence,
-        "horizon_days": horizon_days,
-        "weather": _snapshot_dict(weather),
-        "schedule": _snapshot_dict(schedule) if schedule is not None else None,
-        "history": _snapshot_dict(history),
-    }
-    key = _cache_key(cache_payload)
-    cached = _get_cached_explanation(settings.explanation_cache_path, key)
-
-    if cached:
-        logger.info("explanation_cache_hit target_date=%s key=%s", target_date, key[:12])
-        return cached
-
-    if not settings.giga_api_key:
-        explanation = fallback_explanation(
-            target_date=target_date,
-            decision=decision,
-            probability_flight=probability_flight,
-            confidence=confidence,
-            horizon_days=horizon_days,
-            weather=weather,
-            history=history,
-            schedule=schedule,
-        )
-        _store_cached_explanation(settings.explanation_cache_path, key, explanation)
-        return explanation
-
-    if is_board_cancelled_for_target_date(schedule):
-        explanation = _board_cancelled_explanation(schedule)
-        _store_cached_explanation(settings.explanation_cache_path, key, explanation)
-        return explanation
-
-    factors = get_factor_summary(weather, history, horizon_days, schedule=schedule)
-
-    prompt = {
-        "date": target_date,
-        "decision": decision,
-        "probability_flight": probability_flight,
-        "confidence": confidence,
-        "horizon_days": horizon_days,
-        "forecast_mode": "weather_model" if weather.available else "climate_history",
-        "factors": factors,
-        "disclaimer": DISCLAIMER,
-    }
-
-    system_message = (
-        "Ты пишешь короткое объяснение для сервиса «Летит на Курилы?». "
-        "Объясняй вероятность выполнения или невыполнения рейса. "
-        "Не обещай выполнение рейса. Не называй сервис официальным источником. "
-        "Не придумывай факты. Не меняй вероятность и решение. "
-        "Если по табло рейс перенесен на другую дату или отменен для выбранного дня, напиши коротко: Нет, по информации табло аэропорта рейс на выбранную дату перенесен или отменен. Не добавляй погоду, историю и дисклеймер. "
-        "Если forecast_mode=weather_model, объясняй только по погоде и табло, без исторической статистики. Обязательно назови 2-4 конкретных погодных показателя из factors: видимость, низкая облачность, ветер в м/с, влажность, давление, точка росы или летное окно. В конце напиши: исходя из этих факторов, вероятность вылета такая-то. "
-        "Сырые погодные цифры объясняй человечески: хорошая/умеренная/низкая видимость, низкая/заметная облачность, слабый/умеренный/сильный ветер. "
-        "Если погодного окна нет, сначала объясни мешающие факторы; хорошие показатели вроде отличной видимости подавай через 'несмотря на ...'. "
-        "Если decision=no и летное окно найдено, не пиши просто 'есть летное окно': объясни, что окно минимальное или что условия внутри него остаются рискованными. "
-        "Если низкая облачность 90% или выше, называй ее сильной низкой облачностью. "
-        "Не пиши время летного окна, если известно только общее рабочее окно; тогда пиши просто, что летное окно есть, если decision=yes. "
-        "Объясняй риск тумана через разницу температуры и точки росы, если она есть. "
-        "Историческую часть упоминай только если forecast_mode=climate_history; тогда объясни похожие даты и долю выполненных рейсов, начинай историческую фразу с заглавной буквы. "
-        "Если forecast_mode=climate_history, честно укажи, что точного прогноза погоды на дату еще нет и оценка основана на истории/сезонности. "
-        "Не добавляй отдельную фразу о том, что прогноз не гарантия: дисклеймер показывается отдельно. "
-        "Строго запрещено упоминать билеты, наличие мест, пассажиров, бронирование, салон или продажи. "
-        "Если decision=yes, объясняй, почему дата выглядит скорее подходящей для вылета; не начинай с повышенного риска отмены. "
-        "Если decision=no, пиши, что риск отмены или невыполнения выше, а не что нет мест. "
-        "Тон объяснения должен соответствовать decision: yes поддерживает вывод 'Да', no поддерживает вывод 'Нет'. "
-        "Не используй Markdown-разметку. "
-        "Пиши по-русски, спокойно и понятно. "
-        "Максимум 3 предложения."
-    )
-
-    try:
-        user_message = (
-            f"{system_message}\n\n"
-            "Сформулируй объяснение результата для пользователя на основе этих данных. "
-            f"Данные: {prompt}"
-        )
-
-        with GigaChat(
-            credentials=settings.giga_api_key,
-            scope=settings.giga_scope,
-            model=settings.giga_model,
-            verify_ssl_certs=settings.giga_verify_ssl_certs,
-            timeout=settings.giga_timeout,
-        ) as client:
-            response = client.chat(user_message)
-
-        text = response.choices[0].message.content if response.choices else None
-
-        if text:
-            explanation = text.strip()
-            if _is_safe_explanation(explanation, decision) and _has_specific_weather_details(explanation, weather):
-                _store_cached_explanation(settings.explanation_cache_path, key, explanation)
-                return explanation
-
-            logger.warning(
-                "explanation_rejected_forbidden_content target_date=%s key=%s text=%s",
-                target_date,
-                key[:12],
-                explanation,
-            )
-
-    except Exception as exc:
-        logger.warning("explanation_generation_failed target_date=%s error=%s", target_date, exc)
-
-    explanation = fallback_explanation(
+    return fallback_explanation(
         target_date=target_date,
         decision=decision,
         probability_flight=probability_flight,
         confidence=confidence,
         horizon_days=horizon_days,
-            weather=weather,
-            history=history,
-            schedule=schedule,
-        )
-    _store_cached_explanation(settings.explanation_cache_path, key, explanation)
-    return explanation
+        weather=weather,
+        history=history,
+        schedule=schedule,
+    )

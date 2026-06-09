@@ -156,6 +156,18 @@ function isBoardCancelledForSelectedDate(result) {
   return Boolean(result.schedule?.moved_next_day);
 }
 
+function weatherExplanationDetails(explanation) {
+  const source = String(explanation || "");
+  const marker = "Данные погоды:\n";
+  const markerIndex = source.indexOf(marker);
+
+  if (markerIndex === -1) {
+    return null;
+  }
+
+  return source.slice(markerIndex + marker.length).trim();
+}
+
 function PredictionDecisionIcon({ decision }) {
   const iconName = decision === "yes" ? "yes" : "no";
 
@@ -1329,9 +1341,11 @@ export default function App() {
               <PredictionDecisionIcon decision={result.decision} />
               <div>
                 <div className="result-date-label">{formatPredictionDateTitle(result.date)}</div>
-                <div className={`forecast-mode-badge forecast-mode-${result.forecast_mode || "weather_model"}`}>
-                  {result.forecast_mode_label || "Прогноз с учетом погодной модели"}
-                </div>
+                {!isBoardCancelledForSelectedDate(result) && (
+                  <div className={`forecast-mode-badge forecast-mode-${result.forecast_mode || "weather_model"}`}>
+                    {result.forecast_mode_label || "Прогноз с учетом погодной модели"}
+                  </div>
+                )}
                 <h2>{decisionLabel(result.decision)}</h2>
                 <span>{decisionToneLabel(result)}</span>
               </div>
@@ -1351,7 +1365,18 @@ export default function App() {
             </p>
           )}
 
-          <p className="result-explanation">{renderFormattedExplanation(result.explanation)}</p>
+          {!isBoardCancelledForSelectedDate(result) && weatherExplanationDetails(result.explanation) && (
+            <details className="weather-details-card">
+              <summary>Данные погоды</summary>
+              <p className="result-explanation">
+                {renderFormattedExplanation(weatherExplanationDetails(result.explanation))}
+              </p>
+            </details>
+          )}
+
+          {!isBoardCancelledForSelectedDate(result) && !weatherExplanationDetails(result.explanation) && (
+            <p className="result-explanation">{renderFormattedExplanation(result.explanation)}</p>
+          )}
 
           {result.confidence === "low" && !isBoardCancelledForSelectedDate(result) && (
             <p className="hint">
@@ -1687,7 +1712,7 @@ export default function App() {
               <span>
                 <span className="eyebrow">Личный кабинет</span>
                 <span className="account-name">{profile.name}</span>
-                <span className="small">{profile.email}</span>
+                <span className="small account-email">{profile.email}</span>
               </span>
             </button>
             <button className="secondary account-action" onClick={handleLogout}>
