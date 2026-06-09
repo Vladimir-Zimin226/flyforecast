@@ -36,6 +36,11 @@ DEFAULT_EXTRA_HORIZONS = "60,90"
 
 COMPLETED_BOARD_STATUSES = {"departed", "arrived", "in_flight"}
 UNKNOWN_OUTCOME_STATUSES = {"unknown", "planned_only", "needs_review"}
+NEXT_DAY_OUTCOME_MARKERS = {
+    "delayed_next_day",
+    "completed_next_day",
+    "combined_next_day",
+}
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
 logger = logging.getLogger("forecast_monitor")
 
@@ -389,10 +394,56 @@ def join_unique(values: Iterable[object]) -> str:
     return ";".join(result)
 
 
-def choose_outcome_status(statuses: set[str]) -> str:
-    if statuses & COMPLETED_BOARD_STATUSES:
+def parse_iso_date(value: object) -> date | None:
+    clean = clean_text(value)
+    if not clean:
+        return None
+    try:
+        return date.fromisoformat(clean)
+    except ValueError:
+        return None
+
+
+def is_next_day_row(row: dict, target_date: date) -> bool:
+    actual_date = parse_iso_date(row.get("actual_date"))
+    return actual_date is not None and actual_date > target_date
+
+
+def is_same_day_completed_row(row: dict, target_date: date) -> bool:
+    status = clean_text(row.get("status_normalized"))
+    if status not in COMPLETED_BOARD_STATUSES:
+        return False
+
+    actual_date = parse_iso_date(row.get("actual_date"))
+    if actual_date is None:
+        return True
+    return actual_date == target_date
+
+
+def derived_evidence_statuses(day_rows: list[dict], target_date: date) -> set[str]:
+    statuses = {clean_text(row.get("status_normalized")) for row in day_rows}
+    statuses.discard("")
+
+    for row in day_rows:
+        status = clean_text(row.get("status_normalized"))
+        if not is_next_day_row(row, target_date):
+            continue
+        if status == "delayed":
+            statuses.add("delayed_next_day")
+        elif status == "combined":
+            statuses.add("combined_next_day")
+        elif status in COMPLETED_BOARD_STATUSES:
+            statuses.add("completed_next_day")
+
+    return statuses
+
+
+def choose_outcome_status(day_rows: list[dict], target_date: date) -> str:
+    statuses = derived_evidence_statuses(day_rows, target_date)
+
+    if any(is_same_day_completed_row(row, target_date) for row in day_rows):
         return "completed"
-    if "cancelled" in statuses or "combined" in statuses:
+    if "cancelled" in statuses or "combined" in statuses or statuses & NEXT_DAY_OUTCOME_MARKERS:
         return "cancelled"
     if "delayed" in statuses:
         return "needs_review"
@@ -422,12 +473,25 @@ def build_outcomes_from_board(board_path: Path, today: date, finalize_lag_days: 
         except ValueError:
             continue
 
-        statuses = {clean_text(row.get("status_normalized")) for row in day_rows}
-        statuses.discard("")
-        status = choose_outcome_status(statuses)
-        is_final = target_date <= today - timedelta(days=finalize_lag_days) and status not in UNKNOWN_OUTCOME_STATUSES
+        statuses = derived_evidence_statuses(day_rows, target_date)
+        status = choose_outcome_status(day_rows, target_date)
+        has_immediate_final_evidence = (
+            status == "completed"
+            or "cancelled" in statuses
+            or "combined" in statuses
+            or bool(statuses & NEXT_DAY_OUTCOME_MARKERS)
+        )
+        is_final = (
+            status not in UNKNOWN_OUTCOME_STATUSES
+            and (
+                has_immediate_final_evidence
+                or target_date <= today - timedelta(days=finalize_lag_days)
+            )
+        )
 
-        if status == "cancelled" and "combined" in statuses:
+        if status == "cancelled" and statuses & NEXT_DAY_OUTCOME_MARKERS:
+            reason_class = "schedule_moved_next_day"
+        elif status == "cancelled" and "combined" in statuses:
             reason_class = "schedule_combined"
         else:
             reason_class = join_unique(row.get("reason_class") for row in day_rows) or "unknown"
@@ -469,46 +533,107 @@ def upsert_outcomes(conn: sqlite3.Connection, outcomes: list[dict]) -> int:
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(target_date) DO UPDATE SET
                 status = CASE
+                    WHEN excluded.is_final = 1 AND (
+                        board_outcomes.is_final = 0
+                        OR board_outcomes.status != excluded.status
+                        OR board_outcomes.reason_class != excluded.reason_class
+                        OR board_outcomes.evidence_statuses != excluded.evidence_statuses
+                    ) THEN excluded.status
                     WHEN board_outcomes.is_final = 1 THEN board_outcomes.status
                     ELSE excluded.status
                 END,
                 is_final = CASE
+                    WHEN excluded.is_final = 1 THEN 1
                     WHEN board_outcomes.is_final = 1 THEN 1
                     ELSE excluded.is_final
                 END,
                 finalized_at = CASE
+                    WHEN excluded.is_final = 1 AND (
+                        board_outcomes.is_final = 0
+                        OR board_outcomes.status != excluded.status
+                        OR board_outcomes.reason_class != excluded.reason_class
+                        OR board_outcomes.evidence_statuses != excluded.evidence_statuses
+                    ) THEN excluded.finalized_at
                     WHEN board_outcomes.is_final = 1 AND board_outcomes.finalized_at != '' THEN board_outcomes.finalized_at
                     ELSE excluded.finalized_at
                 END,
                 first_observed_at = CASE
+                    WHEN excluded.is_final = 1 AND (
+                        board_outcomes.is_final = 0
+                        OR board_outcomes.status != excluded.status
+                        OR board_outcomes.reason_class != excluded.reason_class
+                        OR board_outcomes.evidence_statuses != excluded.evidence_statuses
+                    ) THEN excluded.first_observed_at
                     WHEN board_outcomes.is_final = 1 THEN board_outcomes.first_observed_at
                     ELSE excluded.first_observed_at
                 END,
                 last_observed_at = CASE
+                    WHEN excluded.is_final = 1 AND (
+                        board_outcomes.is_final = 0
+                        OR board_outcomes.status != excluded.status
+                        OR board_outcomes.reason_class != excluded.reason_class
+                        OR board_outcomes.evidence_statuses != excluded.evidence_statuses
+                    ) THEN excluded.last_observed_at
                     WHEN board_outcomes.is_final = 1 THEN board_outcomes.last_observed_at
                     ELSE excluded.last_observed_at
                 END,
                 evidence_count = CASE
+                    WHEN excluded.is_final = 1 AND (
+                        board_outcomes.is_final = 0
+                        OR board_outcomes.status != excluded.status
+                        OR board_outcomes.reason_class != excluded.reason_class
+                        OR board_outcomes.evidence_statuses != excluded.evidence_statuses
+                    ) THEN excluded.evidence_count
                     WHEN board_outcomes.is_final = 1 THEN board_outcomes.evidence_count
                     ELSE excluded.evidence_count
                 END,
                 evidence_statuses = CASE
+                    WHEN excluded.is_final = 1 AND (
+                        board_outcomes.is_final = 0
+                        OR board_outcomes.status != excluded.status
+                        OR board_outcomes.reason_class != excluded.reason_class
+                        OR board_outcomes.evidence_statuses != excluded.evidence_statuses
+                    ) THEN excluded.evidence_statuses
                     WHEN board_outcomes.is_final = 1 THEN board_outcomes.evidence_statuses
                     ELSE excluded.evidence_statuses
                 END,
                 source_types = CASE
+                    WHEN excluded.is_final = 1 AND (
+                        board_outcomes.is_final = 0
+                        OR board_outcomes.status != excluded.status
+                        OR board_outcomes.reason_class != excluded.reason_class
+                        OR board_outcomes.evidence_statuses != excluded.evidence_statuses
+                    ) THEN excluded.source_types
                     WHEN board_outcomes.is_final = 1 THEN board_outcomes.source_types
                     ELSE excluded.source_types
                 END,
                 flight_numbers = CASE
+                    WHEN excluded.is_final = 1 AND (
+                        board_outcomes.is_final = 0
+                        OR board_outcomes.status != excluded.status
+                        OR board_outcomes.reason_class != excluded.reason_class
+                        OR board_outcomes.evidence_statuses != excluded.evidence_statuses
+                    ) THEN excluded.flight_numbers
                     WHEN board_outcomes.is_final = 1 THEN board_outcomes.flight_numbers
                     ELSE excluded.flight_numbers
                 END,
                 reason_class = CASE
+                    WHEN excluded.is_final = 1 AND (
+                        board_outcomes.is_final = 0
+                        OR board_outcomes.status != excluded.status
+                        OR board_outcomes.reason_class != excluded.reason_class
+                        OR board_outcomes.evidence_statuses != excluded.evidence_statuses
+                    ) THEN excluded.reason_class
                     WHEN board_outcomes.is_final = 1 THEN board_outcomes.reason_class
                     ELSE excluded.reason_class
                 END,
                 raw_evidence_sample = CASE
+                    WHEN excluded.is_final = 1 AND (
+                        board_outcomes.is_final = 0
+                        OR board_outcomes.status != excluded.status
+                        OR board_outcomes.reason_class != excluded.reason_class
+                        OR board_outcomes.evidence_statuses != excluded.evidence_statuses
+                    ) THEN excluded.raw_evidence_sample
                     WHEN board_outcomes.is_final = 1 THEN board_outcomes.raw_evidence_sample
                     ELSE excluded.raw_evidence_sample
                 END
