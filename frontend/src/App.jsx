@@ -130,6 +130,9 @@ function decisionToneLabel(result) {
   if (result.schedule?.moved_next_day) {
     return "По табло рейс отменен для этой даты";
   }
+  if (result.schedule?.completed_same_day) {
+    return "По табло рейс уже выполнен для этой даты";
+  }
 
   const probability = probabilityPercent(result.probability_flight);
 
@@ -152,8 +155,8 @@ function lowConfidenceHint(result) {
   return "Для этой даты мало надежных похожих случаев в истории, поэтому полезно сравнить соседние даты.";
 }
 
-function isBoardCancelledForSelectedDate(result) {
-  return Boolean(result.schedule?.moved_next_day);
+function hasFinalBoardStatusForSelectedDate(result) {
+  return Boolean(result.schedule?.moved_next_day || result.schedule?.completed_same_day);
 }
 
 function weatherExplanationDetails(explanation) {
@@ -1341,7 +1344,7 @@ export default function App() {
               <PredictionDecisionIcon decision={result.decision} />
               <div>
                 <div className="result-date-label">{formatPredictionDateTitle(result.date)}</div>
-                {!isBoardCancelledForSelectedDate(result) && (
+                {!hasFinalBoardStatusForSelectedDate(result) && (
                   <div className={`forecast-mode-badge forecast-mode-${result.forecast_mode || "weather_model"}`}>
                     {result.forecast_mode_label || "Прогноз с учетом погодной модели"}
                   </div>
@@ -1351,7 +1354,7 @@ export default function App() {
               </div>
             </div>
 
-            {!isBoardCancelledForSelectedDate(result) && (
+            {!hasFinalBoardStatusForSelectedDate(result) && (
               <div className="result-probability-box">
                 <span>Вероятность вылета</span>
                 <div className="probability">{probabilityPercent(result.probability_flight)}%</div>
@@ -1359,13 +1362,13 @@ export default function App() {
             )}
           </div>
 
-          {!isBoardCancelledForSelectedDate(result) && (
+          {!hasFinalBoardStatusForSelectedDate(result) && (
             <p className="lead">
               Вероятность выполнения рейса — {probabilityPercent(result.probability_flight)}%.
             </p>
           )}
 
-          {!isBoardCancelledForSelectedDate(result) && weatherExplanationDetails(result.explanation) && (
+          {!hasFinalBoardStatusForSelectedDate(result) && weatherExplanationDetails(result.explanation) && (
             <details className="weather-details-card">
               <summary>Данные погоды</summary>
               <p className="result-explanation">
@@ -1374,17 +1377,17 @@ export default function App() {
             </details>
           )}
 
-          {!isBoardCancelledForSelectedDate(result) && !weatherExplanationDetails(result.explanation) && (
+          {!hasFinalBoardStatusForSelectedDate(result) && !weatherExplanationDetails(result.explanation) && (
             <p className="result-explanation">{renderFormattedExplanation(result.explanation)}</p>
           )}
 
-          {result.confidence === "low" && !isBoardCancelledForSelectedDate(result) && (
+          {result.confidence === "low" && !hasFinalBoardStatusForSelectedDate(result) && (
             <p className="hint">
               {lowConfidenceHint(result)}
             </p>
           )}
 
-          {!isBoardCancelledForSelectedDate(result) && (
+          {!hasFinalBoardStatusForSelectedDate(result) && (
             <p className="small">{result.disclaimer}</p>
           )}
         </section>

@@ -368,7 +368,7 @@ async def predict(
     )
 
     forecast_mode = "weather_model" if horizon_days <= OPEN_METEO_MAX_HORIZON_DAYS and weather.available else "climate_history"
-    if schedule is not None and schedule.available and schedule.moved_next_day:
+    if schedule is not None and schedule.available and (schedule.moved_next_day or schedule.completed_same_day):
         forecast_mode_label = "Статус по табло аэропорта"
     else:
         forecast_mode_label = (

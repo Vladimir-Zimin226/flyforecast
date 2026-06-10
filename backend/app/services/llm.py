@@ -449,8 +449,16 @@ def is_board_cancelled_for_target_date(schedule: FlightScheduleSnapshot | None) 
     return bool(schedule is not None and schedule.available and schedule.moved_next_day)
 
 
+def is_board_completed_for_target_date(schedule: FlightScheduleSnapshot | None) -> bool:
+    return bool(schedule is not None and schedule.available and schedule.completed_same_day)
+
+
 def _board_cancelled_explanation(schedule: FlightScheduleSnapshot | None) -> str:
     return "По табло рейс отменен для этой даты."
+
+
+def _board_completed_explanation(schedule: FlightScheduleSnapshot | None) -> str:
+    return "По табло рейс уже выполнен для этой даты."
 
 
 def _weather_detail_lines(weather: WeatherSnapshot) -> list[str]:
@@ -535,6 +543,8 @@ def fallback_explanation(
     probability_percent = round(probability_flight * 100)
     if is_board_cancelled_for_target_date(schedule):
         return _board_cancelled_explanation(schedule)
+    if is_board_completed_for_target_date(schedule):
+        return _board_completed_explanation(schedule)
 
     if weather.available:
         return _weather_model_explanation(

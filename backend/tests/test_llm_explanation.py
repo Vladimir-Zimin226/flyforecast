@@ -231,6 +231,30 @@ class ExplanationTests(unittest.TestCase):
         self.assertNotIn("Данные погоды", explanation)
         self.assertNotIn("Исторически", explanation)
 
+    def test_board_completed_explanation_is_short(self) -> None:
+        weather = WeatherSnapshot(source="test", available=True, flight_window_available=True)
+        schedule = FlightScheduleSnapshot(
+            source="test",
+            available=True,
+            completed_same_day=True,
+            observed_at="2026-06-09T14:07:30+11:00",
+        )
+
+        explanation = fallback_explanation(
+            target_date="2026-06-09",
+            decision="yes",
+            probability_flight=0.85,
+            confidence="high",
+            horizon_days=0,
+            weather=weather,
+            history=history_snapshot(),
+            schedule=schedule,
+        )
+
+        self.assertEqual(explanation, "По табло рейс уже выполнен для этой даты.")
+        self.assertNotIn("Данные погоды", explanation)
+        self.assertNotIn("Исторически", explanation)
+
     def test_climate_history_explanation_keeps_history(self) -> None:
         weather = WeatherSnapshot(source="test", available=False)
 
