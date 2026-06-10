@@ -252,8 +252,9 @@ def calculate_probability(
         base += calculate_weather_adjustment(weather, schedule=schedule)
 
     base = apply_schedule_guardrails(base, schedule)
+    lower_bound = 0.0 if schedule is not None and schedule.available and schedule.moved_next_day else 0.05
 
-    return round(min(max(base, 0.05), 0.95), 4)
+    return round(min(max(base, lower_bound), 0.95), 4)
 
 
 def decision_threshold(horizon_days: int) -> float:

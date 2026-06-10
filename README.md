@@ -263,6 +263,7 @@ EXPLANATION_CACHE_PATH=/app/data/interim/explanation_cache.sqlite
 WEATHER_FORECAST_CACHE_PATH=/app/data/interim/weather_forecast_cache.sqlite
 WEATHER_CACHE_FRESH_HOURS=1
 WEATHER_CACHE_STALE_HOURS=72
+OPEN_METEO_FAILURE_COOLDOWN_MINUTES=30
 MET_NO_FALLBACK_ENABLED=true
 MET_NO_USER_AGENT=flyforecast.ru/0.1(+https://flyforecast.ru;admin@example.com)
 

@@ -4,7 +4,7 @@ import logging
 import math
 import sqlite3
 from contextlib import closing
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -43,6 +43,7 @@ OPEN_METEO_RETRIES = 2
 OPEN_METEO_RETRY_DELAY_SECONDS = 0.8
 OPEN_METEO_CACHE_FORECAST_DAYS = OPEN_METEO_MAX_HORIZON_DAYS + 1
 OPEN_METEO_CACHE_PROVIDER = "open-meteo-flight-window-v2"
+OPEN_METEO_STATE_PROVIDER = f"{OPEN_METEO_CACHE_PROVIDER}:live-refresh"
 
 MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
 MET_NO_MAX_HORIZON_DAYS = 9
@@ -365,8 +366,124 @@ def _connect_weather_cache(path: str) -> sqlite3.Connection:
         )
         """
     )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS weather_provider_state (
+            provider TEXT PRIMARY KEY,
+            failure_count INTEGER NOT NULL DEFAULT 0,
+            last_failure_at TEXT,
+            last_failure_reason TEXT,
+            cooldown_until TEXT
+        )
+        """
+    )
     conn.commit()
     return conn
+
+
+def _parse_utc_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _open_meteo_circuit_state(settings: Settings) -> tuple[datetime | None, str | None]:
+    try:
+        with closing(_connect_weather_cache(settings.weather_forecast_cache_path)) as conn:
+            row = conn.execute(
+                """
+                SELECT cooldown_until, last_failure_reason
+                FROM weather_provider_state
+                WHERE provider = ?
+                """,
+                (OPEN_METEO_STATE_PROVIDER,),
+            ).fetchone()
+    except sqlite3.Error as exc:
+        logger.warning("open_meteo_circuit_read_failed error=%s", exc)
+        return None, None
+
+    if not row:
+        return None, None
+
+    cooldown_until_raw, reason = row
+    return _parse_utc_datetime(cooldown_until_raw), reason
+
+
+def _is_open_meteo_circuit_open(settings: Settings) -> tuple[bool, datetime | None, str | None]:
+    cooldown_until, reason = _open_meteo_circuit_state(settings)
+    if cooldown_until is None:
+        return False, None, reason
+
+    if cooldown_until > _utc_now():
+        return True, cooldown_until, reason
+
+    return False, cooldown_until, reason
+
+
+def _record_open_meteo_success(settings: Settings) -> None:
+    try:
+        with closing(_connect_weather_cache(settings.weather_forecast_cache_path)) as conn:
+            conn.execute(
+                """
+                DELETE FROM weather_provider_state
+                WHERE provider = ?
+                """,
+                (OPEN_METEO_STATE_PROVIDER,),
+            )
+            conn.commit()
+    except sqlite3.Error as exc:
+        logger.warning("open_meteo_circuit_reset_failed error=%s", exc)
+
+
+def _record_open_meteo_failure(settings: Settings, reason: str | None) -> None:
+    cooldown_minutes = max(1, int(settings.open_meteo_failure_cooldown_minutes))
+    now = _utc_now()
+    cooldown_until = now + timedelta(minutes=cooldown_minutes)
+    failure_reason = reason or "Open-Meteo is temporarily unavailable."
+
+    try:
+        with closing(_connect_weather_cache(settings.weather_forecast_cache_path)) as conn:
+            conn.execute(
+                """
+                INSERT INTO weather_provider_state (
+                    provider,
+                    failure_count,
+                    last_failure_at,
+                    last_failure_reason,
+                    cooldown_until
+                )
+                VALUES (?, 1, ?, ?, ?)
+                ON CONFLICT(provider) DO UPDATE SET
+                    failure_count = weather_provider_state.failure_count + 1,
+                    last_failure_at = excluded.last_failure_at,
+                    last_failure_reason = excluded.last_failure_reason,
+                    cooldown_until = excluded.cooldown_until
+                """,
+                (
+                    OPEN_METEO_STATE_PROVIDER,
+                    now.isoformat(),
+                    failure_reason,
+                    cooldown_until.isoformat(),
+                ),
+            )
+            conn.commit()
+    except sqlite3.Error as exc:
+        logger.warning("open_meteo_circuit_write_failed error=%s", exc)
+        return
+
+    logger.warning(
+        "open_meteo_circuit_recorded_failure cooldown_until=%s reason=%s",
+        cooldown_until.isoformat(),
+        failure_reason,
+    )
 
 
 def _load_open_meteo_cache(
@@ -706,13 +823,27 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
                 reason=None,
             )
 
-    snapshots, open_meteo_error = await _fetch_open_meteo_snapshots(settings)
-    if snapshots is not None:
-        _store_open_meteo_cache(settings, snapshots)
-        snapshot = snapshots.get(target_date)
-        if snapshot is not None:
-            return snapshot
-        open_meteo_error = "Open-Meteo returned no hourly weather rows for target date."
+    circuit_open, cooldown_until, circuit_reason = _is_open_meteo_circuit_open(settings)
+    open_meteo_error = circuit_reason
+    if circuit_open:
+        logger.warning(
+            "open_meteo_circuit_open target_date=%s cooldown_until=%s reason=%s",
+            target_date.isoformat(),
+            cooldown_until.isoformat() if cooldown_until else None,
+            circuit_reason,
+        )
+        open_meteo_error = "Open-Meteo refresh is paused after recent failures."
+    else:
+        snapshots, open_meteo_error = await _fetch_open_meteo_snapshots(settings)
+        if snapshots is not None:
+            _record_open_meteo_success(settings)
+            _store_open_meteo_cache(settings, snapshots)
+            snapshot = snapshots.get(target_date)
+            if snapshot is not None:
+                return snapshot
+            open_meteo_error = "Open-Meteo returned no hourly weather rows for target date."
+        else:
+            _record_open_meteo_failure(settings, open_meteo_error)
 
     if cached is not None:
         cached_snapshot, age_hours, fetched_at = cached
@@ -727,7 +858,7 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
                 cached_snapshot,
                 source="open-meteo-cache-stale",
                 reason=(
-                    "Open-Meteo недоступен; используется сохранённый прогноз "
+                    "Open-Meteo временно недоступен; используется сохранённый прогноз "
                     f"от {fetched_at.isoformat()}."
                 ),
             )

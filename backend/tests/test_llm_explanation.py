@@ -46,7 +46,7 @@ class ExplanationTests(unittest.TestCase):
 
         self.assertIn("Да", explanation)
         self.assertIn("Данные погоды:", explanation)
-        self.assertIn("видимость - хорошая, около 9200 м", explanation)
+        self.assertIn("видимость - около 9200 м", explanation)
         self.assertIn("низкая облачность - 25%", explanation)
         self.assertIn("ветер - порывы до 8.6 м/с, направление западный (W)", explanation)
         self.assertIn("вероятность вылета — 72%", explanation)
@@ -81,7 +81,7 @@ class ExplanationTests(unittest.TestCase):
         )
 
         self.assertIn("Нет", explanation)
-        self.assertIn("видимость - низкая, около 240 м", explanation)
+        self.assertIn("видимость - около 240 м", explanation)
         self.assertIn("низкая облачность - 100%", explanation)
         self.assertIn("ветер - порывы до 15.8 м/с", explanation)
         self.assertIn("туман - да", explanation)
@@ -124,7 +124,7 @@ class ExplanationTests(unittest.TestCase):
 
         self.assertIn("Данные погоды:", explanation)
         self.assertNotIn("08:00-20:00", explanation)
-        self.assertIn("видимость - умеренная, около 1480 м", explanation)
+        self.assertIn("видимость - около 1480 м", explanation)
         self.assertIn("низкая облачность - 7%", explanation)
         self.assertIn("ветер - порывы до 6.7 м/с", explanation)
         self.assertNotIn("туман -", explanation)
@@ -161,7 +161,7 @@ class ExplanationTests(unittest.TestCase):
             ),
         )
 
-        self.assertIn("видимость - отличная, около 15480 м", explanation)
+        self.assertIn("видимость - около 15480 м", explanation)
         self.assertIn("низкая облачность - 99%", explanation)
         self.assertIn("ветер - порывы до 19.3 м/с", explanation)
         self.assertIn("туман - возможно", explanation)
@@ -201,7 +201,7 @@ class ExplanationTests(unittest.TestCase):
             ),
         )
 
-        self.assertIn("видимость - низкая, около 280 м", explanation)
+        self.assertIn("видимость - около 280 м", explanation)
         self.assertIn("низкая облачность - 100%", explanation)
         self.assertIn("ветер - порывы до 13 м/с", explanation)
         self.assertIn("туман - да", explanation)

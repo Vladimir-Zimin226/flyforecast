@@ -14,6 +14,7 @@
 - Если свежий кэш младше `WEATHER_CACHE_FRESH_HOURS`, `/predict` использует его без live-запроса к Open-Meteo.
 - Для production цель — чаще уточнять текущий/завтрашний прогноз: табло и forecast monitor запускаются каждые `900` секунд, а fresh weather cache живет `1` час.
 - Forecast monitor обновляет сохраненную строку прогноза для горизонтов `0-1` день, пока по табло еще нет финального outcome. Для дальних горизонтов строка остается дневным snapshot.
+- Если live-обновление Open-Meteo падает, backend открывает circuit breaker на `OPEN_METEO_FAILURE_COOLDOWN_MINUTES`: в это время повторные запросы к Open-Meteo пропускаются, а сервис сразу использует stale-кэш или fallback.
 - Если Open-Meteo недоступен, backend может использовать stale-кэш до `WEATHER_CACHE_STALE_HOURS`.
 - Если Open-Meteo и кэш недоступны, backend пробует резервный источник MET Norway / Yr Locationforecast для горизонта `0-9` дней.
 - MET Norway fallback использует тот же поиск погодного окна, но не содержит прямой `visibility`, поэтому fog-risk в этом режиме считается по доступным proxy-признакам: низкая облачность, влажность, dew point spread, ветер, осадки и `fog_area_fraction`, если он есть.
