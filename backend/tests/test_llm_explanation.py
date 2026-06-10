@@ -245,9 +245,10 @@ class ExplanationTests(unittest.TestCase):
         )
 
         self.assertIn("Точного погодного прогноза", explanation)
-        self.assertIn("Исторически", explanation)
-        self.assertIn("85 выполненных", explanation)
-        self.assertIn("55 отмененных", explanation)
+        self.assertIn("Исторически в календарном окне ±14 дней вокруг выбранной даты", explanation)
+        self.assertIn("85 дней с выполненным рейсом", explanation)
+        self.assertIn("55 дней с отменой", explanation)
+        self.assertNotIn("Исторически в похожие даты", explanation)
 
 
 if __name__ == "__main__":

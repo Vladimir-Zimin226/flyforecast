@@ -292,12 +292,12 @@ def get_factor_summary(
     factors: list[str] = []
 
     factors.append(
-        f"историческая вероятность похожих дат: {round(history.historical_probability_flight * 100)}%"
+        f"историческая вероятность календарно близких дат: {round(history.historical_probability_flight * 100)}%"
     )
 
     if history.similar_days_count > 0:
         factors.append(
-            f"в истории найдено похожих дней: {history.similar_days_count}"
+            f"в истории найдено календарно близких дней: {history.similar_days_count}"
         )
 
     if schedule is not None and schedule.available:

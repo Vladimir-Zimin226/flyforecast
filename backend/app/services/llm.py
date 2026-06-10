@@ -413,23 +413,23 @@ def _history_details_text(history: HistoricalSnapshot) -> str:
     if history.similar_days_count > 0:
         completed_phrase = _ru_day_phrase(
             history.completed_count,
-            "выполненный день",
-            "выполненных дня",
-            "выполненных дней",
+            "день с выполненным рейсом",
+            "дня с выполненным рейсом",
+            "дней с выполненным рейсом",
         )
         cancelled_phrase = _ru_day_phrase(
             history.cancelled_count,
-            "отмененный день",
-            "отмененных дня",
-            "отмененных дней",
+            "день с отменой",
+            "дня с отменой",
+            "дней с отменой",
         )
         return (
-            f"Исторически в похожие даты было {completed_phrase} "
+            f"Исторически в календарном окне ±14 дней вокруг выбранной даты было {completed_phrase} "
             f"и {cancelled_phrase} из {history.similar_days_count}, "
             f"то есть около {historical_percent}% выполнений"
         )
 
-    return f"Историческая оценка для похожих дат около {historical_percent}% выполнений"
+    return f"Историческая оценка по календарному окну ±14 дней около {historical_percent}% выполнений"
 
 
 def _has_specific_weather_details(text: str, weather: WeatherSnapshot) -> bool:
@@ -564,7 +564,7 @@ def fallback_explanation(
             weather_parts.append(_fog_text(weather))
         horizon_text = f"По погоде: {'; '.join(weather_parts)}."
     else:
-        horizon_text = "Погодный прогноз для даты недоступен, поэтому оценка опирается на историю похожих дат."
+        horizon_text = "Погодный прогноз для даты недоступен, поэтому оценка опирается на историю календарно близких дат."
 
     schedule_prefix = f"{schedule_text} " if schedule_text else ""
 
