@@ -364,6 +364,7 @@ async def predict(
         horizon_days=horizon_days,
         weather=weather,
         history=history,
+        schedule=schedule,
     )
 
     forecast_mode = "weather_model" if horizon_days <= OPEN_METEO_MAX_HORIZON_DAYS and weather.available else "climate_history"
