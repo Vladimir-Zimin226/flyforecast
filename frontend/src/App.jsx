@@ -1185,7 +1185,7 @@ export default function App() {
         <div className="predict-card-header">
           <div>
             <div className="eyebrow">FLYFORECAST.RU</div>
-            <h1>Когда хотите вылететь с Кунашира?</h1>
+            <h1>Когда самолет на или с Кунашира?</h1>
             <p className="lead">
               Оценим вероятность вылета через аэропорт Менделеево на выбранную дату.
             </p>
