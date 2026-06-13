@@ -456,9 +456,9 @@ button:disabled {
 }
 
 .result-decision h2 {
-  margin-bottom: 4px;
+  margin-bottom: 12px;
   font-size: clamp(46px, 8vw, 86px);
-  line-height: 0.95;
+  line-height: 1;
 }
 
 .result-date-label {
