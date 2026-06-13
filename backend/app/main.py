@@ -26,7 +26,7 @@ from app.schemas import (
 from app.services.background_services import get_admin_services_status
 from app.services.flight_schedule import get_flight_schedule_for_date
 from app.services.history import get_historical_snapshot
-from app.services.llm import generate_user_explanation
+from app.services.explanations import generate_user_explanation
 from app.services.predictor import (
     DATA_VERSION,
     DISCLAIMER,

@@ -1,7 +1,7 @@
 import unittest
 
 from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
-from app.services.llm import fallback_explanation
+from app.services.explanations import fallback_explanation
 
 
 def history_snapshot() -> HistoricalSnapshot:
