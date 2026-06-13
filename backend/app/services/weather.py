@@ -49,6 +49,16 @@ MET_NO_URL = "https://api.met.no/weatherapi/locationforecast/2.0/compact"
 MET_NO_MAX_HORIZON_DAYS = 9
 
 
+def _fresh_cache_max_age_hours(settings: Settings, horizon_days: int) -> float:
+    base_hours = max(float(settings.weather_cache_fresh_hours), 0.0)
+    if horizon_days <= 1:
+        live_hours = max(float(settings.weather_live_cache_fresh_minutes), 1.0) / 60.0
+        if base_hours <= 0:
+            return live_hours
+        return min(base_hours, live_hours)
+    return base_hours
+
+
 def _unavailable_weather(reason: str) -> WeatherSnapshot:
     return WeatherSnapshot(
         source="weather-unavailable",
@@ -811,11 +821,14 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
     cached = _load_open_meteo_cache(settings, target_date)
     if cached is not None:
         cached_snapshot, age_hours, _ = cached
-        if age_hours <= settings.weather_cache_fresh_hours:
+        fresh_max_age_hours = _fresh_cache_max_age_hours(settings, horizon_days)
+        if age_hours <= fresh_max_age_hours:
             logger.info(
-                "weather_cache_fresh_hit target_date=%s age_hours=%.2f",
+                "weather_cache_fresh_hit target_date=%s horizon_days=%s age_hours=%.2f max_age_hours=%.2f",
                 target_date.isoformat(),
+                horizon_days,
                 age_hours,
+                fresh_max_age_hours,
             )
             return _cache_snapshot_with_source(
                 cached_snapshot,

@@ -2,12 +2,14 @@ import csv
 import sqlite3
 import tempfile
 import unittest
-from datetime import date
+from argparse import Namespace
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from pipelines.evaluation.forecast_monitor import (
     build_outcomes_from_board,
     init_db,
+    loop_horizons_for_iteration,
     upsert_outcomes,
 )
 
@@ -32,6 +34,35 @@ def write_board_rows(path: Path, rows: list[dict[str, str]]) -> None:
 
 
 class ForecastMonitorOutcomeTests(unittest.TestCase):
+    def test_loop_uses_active_horizons_between_full_refreshes(self) -> None:
+        args = Namespace(
+            horizons="0,1,2,3",
+            extra_horizons="60,90",
+            active_horizons="0,1",
+            full_refresh_every_seconds=3600,
+        )
+        now = datetime(2026, 6, 14, 9, 0, 0)
+
+        horizons, full_refresh_due = loop_horizons_for_iteration(args, now, None)
+        self.assertTrue(full_refresh_due)
+        self.assertEqual(horizons, [0, 1, 2, 3, 60, 90])
+
+        horizons, full_refresh_due = loop_horizons_for_iteration(
+            args,
+            now + timedelta(minutes=5),
+            now,
+        )
+        self.assertFalse(full_refresh_due)
+        self.assertEqual(horizons, [0, 1])
+
+        horizons, full_refresh_due = loop_horizons_for_iteration(
+            args,
+            now + timedelta(hours=1),
+            now,
+        )
+        self.assertTrue(full_refresh_due)
+        self.assertEqual(horizons, [0, 1, 2, 3, 60, 90])
+
     def test_same_day_departure_is_completed_and_final_without_lag_wait(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             board_path = Path(tmp) / "board.csv"

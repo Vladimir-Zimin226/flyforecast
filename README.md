@@ -49,14 +49,14 @@
 - ограничение: 5 бесплатных прогнозов без регистрации, без лимита для администратора;
 - endpoint прогноза `/predict?date=YYYY-MM-DD`;
 - Open-Meteo forecast API с fog/low-cloud признаками для Менделеево;
-- GigaChat API для пользовательского объяснения;
-- baseline-расчёт вероятности `mvp-baseline-004`;
+- детерминированное пользовательское объяснение: табло, погодные факторы или исторический текст;
+- baseline-расчёт вероятности `mvp-baseline-009`;
 - legacy JSONL-логирование прогнозов для совместимости с monitor/pipeline;
 - hourly collector статусов рейсов по табло аэропорта;
 - forecast monitor для ledger прогнозов, фактов и метрик качества;
 - рабочий v3 dataset с ручной проверкой и board evidence.
 
-LLM не принимает решение о вероятности, а только формулирует объяснение уже рассчитанного результата.
+Внешняя LLM не используется: объяснение собирается кодом из уже рассчитанных факторов.
 
 ---
 
@@ -154,7 +154,7 @@ backend/
 - `backend/app/services/fog_risk.py` — единые правила расчёта dew point spread и риска тумана/низкой облачности.
 - `backend/app/services/history.py` — historical snapshot из dataset.
 - `backend/app/services/predictor.py` — MVP baseline probability/decision/confidence.
-- `backend/app/services/llm.py` — объяснение результата через GigaChat, кэширование объяснений и фильтр доменных галлюцинаций.
+- `backend/app/services/explanations.py` — детерминированное объяснение результата для пользователя.
 
 ## Frontend
 
@@ -202,19 +202,17 @@ docs/
 ├── data_experiments.md
 ├── fog_risk_dataset.md
 ├── forecast_operations.md
-├── llm_failures.md
 ├── product_benchmarking.md
 ├── prototype.md
 └── privacy-policy/
 ```
 
-- `docs/baseline_model.md` — как работает текущий `mvp-baseline-004`.
+- `docs/baseline_model.md` — как работает текущий `mvp-baseline-009`.
 - `docs/business_analysis.md` — бизнес-анализ MVP.
 - `docs/dataset_preparation.md` — отчёт по подготовке датасета для ML-задачи.
 - `docs/data_experiments.md` — история источников, датасетов, сборщиков и ML-data экспериментов.
 - `docs/fog_risk_dataset.md` — решение по Open-Meteo fog-risk, отложенным FlightRadar/Himawari и командам сборки.
-- `docs/forecast_operations.md` — эксплуатационные правила: Open-Meteo guardrail, дальние прогнозы, LLM cache.
-- `docs/llm_failures.md` — журнал неудачных LLM-объяснений и принятых guardrails.
+- `docs/forecast_operations.md` — эксплуатационные правила: Open-Meteo guardrail, дальние прогнозы и мониторинг качества.
 - `docs/product_benchmarking.md` — продуктовый benchmarking.
 - `docs/prototype.md` — описание продуктового прототипа.
 - `docs/privacy-policy/` — материалы и образцы для политики обработки персональных данных.
@@ -246,12 +244,6 @@ JWT_SECRET=change-me
 ADMIN_EMAIL=admin@example.com
 ADMIN_PASSWORD=change-me-strong-admin-password
 
-GIGA_API_KEY=your_gigachat_authorization_key
-GIGA_MODEL=GigaChat-2
-GIGA_SCOPE=GIGACHAT_API_PERS
-GIGA_VERIFY_SSL_CERTS=true
-GIGA_TIMEOUT=30
-
 POSTGRES_DB=flyforecast
 POSTGRES_USER=flyforecast
 POSTGRES_PASSWORD=change-me-postgres-password
@@ -259,9 +251,9 @@ DATABASE_URL=postgresql://flyforecast:change-me-postgres-password@db:5432/flyfor
 
 FLYFORECAST_DATASET_PATH=/app/data/processed/dataset_daily_flights_v3.csv
 PREDICTION_LOG_PATH=/app/data/interim/prediction_logs.jsonl
-EXPLANATION_CACHE_PATH=/app/data/interim/explanation_cache.sqlite
 WEATHER_FORECAST_CACHE_PATH=/app/data/interim/weather_forecast_cache.sqlite
 WEATHER_CACHE_FRESH_HOURS=1
+WEATHER_LIVE_CACHE_FRESH_MINUTES=15
 WEATHER_CACHE_STALE_HOURS=72
 OPEN_METEO_FAILURE_COOLDOWN_MINUTES=30
 MET_NO_FALLBACK_ENABLED=true
@@ -456,7 +448,7 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 
 ## Надёжность прогнозов и объяснений
 
-Расчёт вероятности не зависит от GigaChat. Backend сначала получает weather snapshot и historical snapshot, затем считает `probability_flight`, `decision` и `confidence` baseline-моделью.
+Backend сначала получает weather snapshot и historical snapshot, затем считает `probability_flight`, `decision` и `confidence` baseline-моделью.
 
 Правила доступности погоды:
 
@@ -466,6 +458,7 @@ curl "https://flyforecast.ru/api/predict?date=2026-06-01&session_prediction_numb
 - на горизонте `0-15` дней weather snapshot дополнительно содержит `visibility`, `cloud_cover_low`, `weather_code`, `dew_point_spread` и `fog_low_cloud_risk_*`;
 - MET Norway fallback не содержит прямой `visibility`, поэтому fog-risk в этом режиме считается по доступным proxy-признакам;
 - на горизонте `16+` дней прогноз строится без погодного API, по истории и сезонности, и в интерфейсе маркируется как климатико-историческая оценка риска;
+- для горизонтов `0-1` день кеш погоды считается свежим только `WEATHER_LIVE_CACHE_FRESH_MINUTES` минут, чтобы день вылета и канун вылета обновлялись активнее;
 - forecast monitor сохраняет дальние прогнозы для последующей оценки качества, но пропускает ближние прогнозы, если weather snapshot недоступен после всех fallback-слоёв.
 
 Для анализа тумана и низкой облачности по Менделеево используется отдельный pipeline:
@@ -476,9 +469,9 @@ python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
 
 Он собирает исторические Open-Meteo признаки по координатам аэропорта Менделеево и сопоставляет их с известными исходами рейсов из `dataset_daily_flights_v3.csv`.
 
-Пользовательское объяснение кэшируется в `EXPLANATION_CACHE_PATH`, чтобы одинаковые прогнозы не создавали повторные обращения к GigaChat. Дополнительно backend отклоняет LLM-ответы с доменными галлюцинациями про билеты, места, пассажиров или бронирование и заменяет их безопасным fallback-текстом.
+Пользовательское объяснение собирается детерминированными правилами: финальный статус табло, список погодных факторов для погодной модели или исторический текст для дальнего горизонта. Внешняя LLM для объяснений не используется.
 
-Подробнее см. `docs/forecast_operations.md` и `docs/llm_failures.md`.
+Подробнее см. `docs/forecast_operations.md`.
 
 ---
 

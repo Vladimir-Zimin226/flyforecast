@@ -55,6 +55,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--board-status-path", default=DEFAULT_BOARD_STATUS_PATH)
     parser.add_argument("--horizons", default=DEFAULT_HORIZONS)
     parser.add_argument("--extra-horizons", default=DEFAULT_EXTRA_HORIZONS)
+    parser.add_argument("--active-horizons", default="0,1")
+    parser.add_argument("--full-refresh-every-seconds", type=int, default=3600)
     parser.add_argument("--finalize-lag-days", type=int, default=2)
     parser.add_argument("--prediction-start-hour", type=int, default=6)
     parser.add_argument("--loop", action="store_true")
@@ -1005,17 +1007,41 @@ def record_service_error(db_path: Path, timezone_name: str, started_at: datetime
         pass
 
 
-async def run_once(args: argparse.Namespace) -> None:
+def full_horizons_from_args(args: argparse.Namespace) -> list[int]:
+    return parse_horizons(args.horizons, args.extra_horizons)
+
+
+def active_horizons_from_args(args: argparse.Namespace) -> list[int]:
+    horizons = parse_horizons(args.active_horizons)
+    return horizons or full_horizons_from_args(args)
+
+
+def loop_horizons_for_iteration(
+    args: argparse.Namespace,
+    now: datetime,
+    last_full_refresh_at: datetime | None,
+) -> tuple[list[int], bool]:
+    full_refresh_due = (
+        last_full_refresh_at is None
+        or (now - last_full_refresh_at).total_seconds() >= args.full_refresh_every_seconds
+    )
+    return (
+        full_horizons_from_args(args) if full_refresh_due else active_horizons_from_args(args),
+        full_refresh_due,
+    )
+
+
+async def run_once(args: argparse.Namespace, horizons: list[int] | None = None) -> None:
     settings = get_settings()
     timezone_name = args.timezone or settings.airport_timezone
-    horizons = parse_horizons(args.horizons, args.extra_horizons)
+    prediction_horizons = horizons or full_horizons_from_args(args)
     now = now_in_timezone(timezone_name)
 
     try:
         with connect(Path(args.db_path)) as conn:
             init_db(conn)
             if now.hour >= args.prediction_start_hour:
-                predictions_inserted = await make_prediction_rows(conn, horizons, timezone_name)
+                predictions_inserted = await make_prediction_rows(conn, prediction_horizons, timezone_name)
             else:
                 predictions_inserted = 0
             outcomes = build_outcomes_from_board(
@@ -1043,6 +1069,7 @@ async def run_once(args: argparse.Namespace) -> None:
 
     print(
         f"{now.isoformat()} forecast_monitor "
+        f"horizons={','.join(str(value) for value in prediction_horizons)} "
         f"predictions_inserted={predictions_inserted} "
         f"outcomes_seen={len(outcomes)} outcomes_changed={outcomes_changed} "
         f"evaluations_changed={evaluations_changed} "
@@ -1051,9 +1078,17 @@ async def run_once(args: argparse.Namespace) -> None:
 
 
 async def run_loop(args: argparse.Namespace) -> None:
+    timezone_name = args.timezone or get_settings().airport_timezone
+    last_full_refresh_at: datetime | None = None
+
     while True:
+        now = now_in_timezone(timezone_name)
+        horizons, full_refresh_due = loop_horizons_for_iteration(args, now, last_full_refresh_at)
+
         try:
-            await run_once(args)
+            await run_once(args, horizons=horizons)
+            if full_refresh_due:
+                last_full_refresh_at = now
         except Exception as exc:
             print(f"{datetime.now().isoformat(timespec='seconds')} forecast_monitor_error={type(exc).__name__}: {exc}")
         await asyncio.sleep(args.interval_seconds)
