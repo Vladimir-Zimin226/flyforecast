@@ -37,6 +37,23 @@ def _parse_hour(value: object) -> int | None:
         return None
 
 
+def _parse_time(value: object) -> str | None:
+    clean = _clean_text(value)
+    if not clean:
+        return None
+    parts = clean.split(":", 1)
+    if len(parts) != 2:
+        return None
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1])
+    except ValueError:
+        return None
+    if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
 def _parse_observed_at(value: object) -> datetime | None:
     clean = _clean_text(value)
     if not clean:
@@ -130,6 +147,16 @@ def _flight_state(row: dict[str, str], target_date: date) -> str:
     return "pending"
 
 
+def _effective_flight_time(row: dict[str, str], target_date: date) -> str | None:
+    status = _clean_text(row.get("status_normalized"))
+    actual_date = _parse_date(row.get("actual_date"))
+    actual_time = _parse_time(row.get("actual_time"))
+
+    if status in {"delayed", "in_flight", "arrived", "departed"} and actual_date == target_date and actual_time:
+        return actual_time
+    return _parse_time(row.get("flight_time"))
+
+
 def _schedule_rows_for_flight_state(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     arrival_rows = [row for row in rows if _direction(row) == "arrival"]
     if arrival_rows:
@@ -140,13 +167,14 @@ def _schedule_rows_for_flight_state(rows: list[dict[str, str]]) -> list[dict[str
 
 
 def _flight_snapshot(row: dict[str, str], target_date: date) -> FlightScheduleFlight:
+    effective_time = _effective_flight_time(row, target_date)
     return FlightScheduleFlight(
         direction=_clean_text(row.get("direction")) or None,
-        flight_time=_clean_text(row.get("flight_time")) or None,
+        flight_time=effective_time or _clean_text(row.get("flight_time")) or None,
         flight_numbers=_clean_text(row.get("flight_numbers")) or None,
         status=_clean_text(row.get("status_normalized")) or None,
         actual_date=_clean_text(row.get("actual_date")) or None,
-        hour=_parse_hour(row.get("flight_time")),
+        hour=_parse_hour(effective_time),
         state=_flight_state(row, target_date),
     )
 
@@ -167,14 +195,14 @@ def get_flight_schedule_for_date(
     if not rows:
         return _unavailable(f"No board schedule rows for {target_date.isoformat()}.", source)
 
-    latest_flight_rows = _latest_row_per_flight(rows)
     latest_observation_rows = _latest_rows(rows)
+    latest_flight_rows = _latest_row_per_flight(latest_observation_rows or rows)
     deduplicated_rows = latest_flight_rows or latest_observation_rows or rows
     schedule_rows = _schedule_rows_for_flight_state(deduplicated_rows)
 
     scheduled_hours = [
         hour
-        for hour in (_parse_hour(row.get("flight_time")) for row in schedule_rows)
+        for hour in (_parse_hour(_effective_flight_time(row, target_date)) for row in schedule_rows)
         if hour is not None
     ]
     if not scheduled_hours:
@@ -183,7 +211,7 @@ def get_flight_schedule_for_date(
     departure_hours = [
         hour
         for hour in (
-            _parse_hour(row.get("flight_time"))
+            _parse_hour(_effective_flight_time(row, target_date))
             for row in schedule_rows
             if _clean_text(row.get("direction")) == "departure"
         )
