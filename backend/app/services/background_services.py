@@ -225,6 +225,15 @@ def _schedule_snapshot_from_prediction(row: sqlite3.Row) -> FlightScheduleSnapsh
         moved_next_day=bool(row["schedule_moved_next_day"]),
         completed_same_day=bool(row["schedule_completed_same_day"]),
         status_summary=row["schedule_status_summary"],
+        total_flights=row["schedule_total_flights"] if "schedule_total_flights" in keys else 0,
+        completed_flights=row["schedule_completed_flights"] if "schedule_completed_flights" in keys else 0,
+        unavailable_flights=row["schedule_unavailable_flights"] if "schedule_unavailable_flights" in keys else 0,
+        pending_flights=row["schedule_pending_flights"] if "schedule_pending_flights" in keys else 0,
+        active_flight_index=row["schedule_active_flight_index"] if "schedule_active_flight_index" in keys else None,
+        active_flight_hour=row["schedule_active_flight_hour"] if "schedule_active_flight_hour" in keys else None,
+        active_flight_time=row["schedule_active_flight_time"] if "schedule_active_flight_time" in keys else None,
+        active_flight_numbers=row["schedule_active_flight_numbers"] if "schedule_active_flight_numbers" in keys else None,
+        active_flight_status=row["schedule_active_flight_status"] if "schedule_active_flight_status" in keys else None,
     )
 
 

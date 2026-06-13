@@ -302,9 +302,27 @@ def get_factor_summary(
 
     if schedule is not None and schedule.available:
         if schedule.moved_next_day:
-            factors.append("по последним строкам табло рейс на эту дату перенесен на следующую дату")
+            if schedule.total_flights > 1 and schedule.completed_flights > 0:
+                factors.append(
+                    f"по табло выполнено {schedule.completed_flights} из {schedule.total_flights} рейсов, "
+                    "следующий рейс отменен или перенесен"
+                )
+            elif schedule.total_flights > 1 and schedule.unavailable_flights >= schedule.total_flights:
+                factors.append("по последним строкам табло все рейсы на эту дату отменены или перенесены")
+            elif schedule.total_flights > 1:
+                factors.append("по последним строкам табло активный рейс на эту дату отменен или перенесен")
+            else:
+                factors.append("по последним строкам табло рейс на эту дату перенесен на следующую дату")
         elif schedule.completed_same_day:
-            factors.append("по последним строкам табло рейс на эту дату уже выполнялся")
+            if schedule.total_flights > 1:
+                factors.append("по последним строкам табло сегодняшние рейсы уже выполнены")
+            else:
+                factors.append("по последним строкам табло рейс на эту дату уже выполнялся")
+        elif schedule.total_flights > 1 and schedule.completed_flights > 0:
+            factors.append(
+                f"по табло выполнено {schedule.completed_flights} из {schedule.total_flights} рейсов, "
+                "прогноз относится к следующему рейсу"
+            )
         elif schedule.first_departure_hour is not None and schedule.last_scheduled_hour is not None:
             factors.append(
                 "расписание табло на дату: "

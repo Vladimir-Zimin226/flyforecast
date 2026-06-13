@@ -3,11 +3,12 @@ from datetime import date, datetime
 from pathlib import Path
 
 from app.config import get_settings
-from app.schemas import FlightScheduleSnapshot
+from app.schemas import FlightScheduleFlight, FlightScheduleSnapshot
 
 
 COMPLETED_BOARD_STATUSES = {"departed", "arrived", "in_flight"}
 NEXT_DAY_BOARD_STATUSES = COMPLETED_BOARD_STATUSES | {"delayed", "combined"}
+UNAVAILABLE_BOARD_STATUSES = {"cancelled", "combined"}
 
 
 def _clean_text(value: object) -> str:
@@ -63,11 +64,18 @@ def _latest_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return [row for row in rows if _clean_text(row.get("observed_at")) == latest]
 
 
+def _flight_key(row: dict[str, str]) -> tuple[str, str, str]:
+    direction = _clean_text(row.get("direction"))
+    flight_numbers = _clean_text(row.get("flight_numbers"))
+    flight_time = _clean_text(row.get("flight_time"))
+    return direction, flight_numbers or flight_time, flight_time
+
+
 def _latest_row_per_flight(rows: list[dict[str, str]]) -> list[dict[str, str]]:
-    latest_by_key: dict[tuple[str, str], dict[str, str]] = {}
+    latest_by_key: dict[tuple[str, str, str], dict[str, str]] = {}
     for row in rows:
-        key = (_clean_text(row.get("direction")), _clean_text(row.get("flight_numbers")))
-        if not key[1]:
+        key = _flight_key(row)
+        if not key[1] and not key[2]:
             continue
 
         current = latest_by_key.get(key)
@@ -96,6 +104,37 @@ def _join_unique(values: list[str]) -> str | None:
 
 def _unavailable(reason: str, source: str) -> FlightScheduleSnapshot:
     return FlightScheduleSnapshot(source=source, available=False, reason=reason)
+
+
+def _flight_state(row: dict[str, str], target_date: date) -> str:
+    status = _clean_text(row.get("status_normalized"))
+    actual_date = _parse_date(row.get("actual_date"))
+
+    if status in COMPLETED_BOARD_STATUSES:
+        if actual_date is None or actual_date == target_date:
+            return "completed"
+        if actual_date > target_date:
+            return "unavailable"
+
+    if status in UNAVAILABLE_BOARD_STATUSES:
+        return "unavailable"
+
+    if status in NEXT_DAY_BOARD_STATUSES and actual_date is not None and actual_date > target_date:
+        return "unavailable"
+
+    return "pending"
+
+
+def _flight_snapshot(row: dict[str, str], target_date: date) -> FlightScheduleFlight:
+    return FlightScheduleFlight(
+        direction=_clean_text(row.get("direction")) or None,
+        flight_time=_clean_text(row.get("flight_time")) or None,
+        flight_numbers=_clean_text(row.get("flight_numbers")) or None,
+        status=_clean_text(row.get("status_normalized")) or None,
+        actual_date=_clean_text(row.get("actual_date")) or None,
+        hour=_parse_hour(row.get("flight_time")),
+        state=_flight_state(row, target_date),
+    )
 
 
 def get_flight_schedule_for_date(
@@ -136,23 +175,42 @@ def get_flight_schedule_for_date(
         if hour is not None
     ]
 
-    moved_next_day = False
-    completed_same_day = False
     statuses: list[str] = []
+    flights = sorted(
+        (_flight_snapshot(row, target_date) for row in schedule_rows),
+        key=lambda flight: (
+            flight.hour if flight.hour is not None else 99,
+            flight.direction or "",
+            flight.flight_numbers or "",
+        ),
+    )
+    total_flights = len(flights)
+    completed_flights = sum(1 for flight in flights if flight.state == "completed")
+    unavailable_flights = sum(1 for flight in flights if flight.state == "unavailable")
+    pending_flights = sum(1 for flight in flights if flight.state == "pending")
+
+    active_flight_index: int | None = None
+    active_flight: FlightScheduleFlight | None = None
+    for index, flight in enumerate(flights, start=1):
+        if flight.state != "completed":
+            active_flight_index = index
+            active_flight = flight
+            break
+
     for row in schedule_rows:
         status = _clean_text(row.get("status_normalized"))
         if status:
             statuses.append(status)
 
-        actual_date = _parse_date(row.get("actual_date"))
-        if status in NEXT_DAY_BOARD_STATUSES and actual_date is not None and actual_date > target_date:
-            moved_next_day = True
-        if status in COMPLETED_BOARD_STATUSES and (actual_date is None or actual_date == target_date):
-            completed_same_day = True
-
     first_scheduled_hour = min(scheduled_hours)
     last_scheduled_hour = max(scheduled_hours)
-    first_departure_hour = min(departure_hours) if departure_hours else first_scheduled_hour
+    first_departure_hour = (
+        active_flight.hour
+        if active_flight is not None and active_flight.hour is not None
+        else min(departure_hours) if departure_hours else first_scheduled_hour
+    )
+    completed_same_day = total_flights > 0 and completed_flights == total_flights
+    moved_next_day = active_flight is not None and active_flight.state == "unavailable"
 
     return FlightScheduleSnapshot(
         source=source,
@@ -167,4 +225,14 @@ def get_flight_schedule_for_date(
         moved_next_day=moved_next_day,
         completed_same_day=completed_same_day,
         status_summary=_join_unique(statuses),
+        total_flights=total_flights,
+        completed_flights=completed_flights,
+        unavailable_flights=unavailable_flights,
+        pending_flights=pending_flights,
+        active_flight_index=active_flight_index,
+        active_flight_hour=active_flight.hour if active_flight else None,
+        active_flight_time=active_flight.flight_time if active_flight else None,
+        active_flight_numbers=active_flight.flight_numbers if active_flight else None,
+        active_flight_status=active_flight.status if active_flight else None,
+        flights=flights,
     )

@@ -454,10 +454,23 @@ def is_board_completed_for_target_date(schedule: FlightScheduleSnapshot | None) 
 
 
 def _board_cancelled_explanation(schedule: FlightScheduleSnapshot | None) -> str:
+    if schedule is not None and schedule.total_flights > 1:
+        if schedule.completed_flights > 0:
+            return (
+                f"По табло выполнено {schedule.completed_flights} из {schedule.total_flights} рейсов. "
+                "Следующий рейс отменен или перенесен для этой даты."
+            )
+        if schedule.unavailable_flights >= schedule.total_flights:
+            return "По табло все рейсы отменены или перенесены для этой даты."
+        if schedule.active_flight_index == 1:
+            return "По табло первый рейс отменен или перенесен для этой даты."
+        return "По табло следующий рейс отменен или перенесен для этой даты."
     return "По табло рейс отменен для этой даты."
 
 
 def _board_completed_explanation(schedule: FlightScheduleSnapshot | None) -> str:
+    if schedule is not None and schedule.total_flights > 1:
+        return "По табло сегодняшние рейсы успешно выполнены."
     return "По табло рейс уже выполнен для этой даты."
 
 
@@ -521,13 +534,27 @@ def _weather_model_explanation(
     if not weather_lines:
         weather_lines = ["погодные показатели - данные источника неполные"]
 
-    return "\n".join(
+    lines = []
+    if (
+        schedule is not None
+        and schedule.total_flights > 1
+        and schedule.completed_flights > 0
+        and not schedule.completed_same_day
+        and not schedule.moved_next_day
+    ):
+        lines.append(
+            f"По табло выполнено {schedule.completed_flights} из {schedule.total_flights} рейсов. "
+            "Прогноз относится к следующему рейсу."
+        )
+
+    lines.extend(
         [
             f"{decision_text}. Данные погоды:",
             *weather_lines,
             f"Исходя из этих факторов, вероятность вылета — {probability_percent}%.",
         ]
     )
+    return "\n".join(lines)
 
 
 def fallback_explanation(

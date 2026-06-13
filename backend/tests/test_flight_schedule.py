@@ -65,6 +65,12 @@ class FlightScheduleTests(unittest.TestCase):
         self.assertEqual(schedule.schedule_window_start_hour, 9)
         self.assertEqual(schedule.schedule_window_end_hour, 14)
         self.assertFalse(schedule.moved_next_day)
+        self.assertFalse(schedule.completed_same_day)
+        self.assertEqual(schedule.total_flights, 2)
+        self.assertEqual(schedule.completed_flights, 0)
+        self.assertEqual(schedule.pending_flights, 2)
+        self.assertEqual(schedule.active_flight_index, 1)
+        self.assertEqual(schedule.active_flight_hour, 10)
 
     def test_marks_next_day_delay_from_board_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -90,6 +96,155 @@ class FlightScheduleTests(unittest.TestCase):
         self.assertTrue(schedule.moved_next_day)
         self.assertFalse(schedule.completed_same_day)
         self.assertEqual(schedule.status_summary, "delayed")
+        self.assertEqual(schedule.total_flights, 1)
+        self.assertEqual(schedule.unavailable_flights, 1)
+
+    def test_completed_first_flight_moves_forecast_to_next_flight(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "board.csv"
+            write_rows(
+                path,
+                [
+                    {
+                        "observed_at": "2026-06-14T12:00:00+11:00",
+                        "direction": "departure",
+                        "flight_date": "2026-06-14",
+                        "flight_time": "10:20",
+                        "flight_numbers": "HZ-3032",
+                        "status_normalized": "departed",
+                        "actual_date": "2026-06-14",
+                    },
+                    {
+                        "observed_at": "2026-06-14T12:00:00+11:00",
+                        "direction": "departure",
+                        "flight_date": "2026-06-14",
+                        "flight_time": "15:10",
+                        "flight_numbers": "HZ-3034",
+                        "status_normalized": "scheduled",
+                        "actual_date": "2026-06-14",
+                    },
+                ],
+            )
+
+            schedule = get_flight_schedule_for_date(date(2026, 6, 14), board_path=path)
+
+        self.assertTrue(schedule.available)
+        self.assertFalse(schedule.moved_next_day)
+        self.assertFalse(schedule.completed_same_day)
+        self.assertEqual(schedule.total_flights, 2)
+        self.assertEqual(schedule.completed_flights, 1)
+        self.assertEqual(schedule.pending_flights, 1)
+        self.assertEqual(schedule.active_flight_index, 2)
+        self.assertEqual(schedule.first_departure_hour, 15)
+        self.assertEqual(schedule.active_flight_numbers, "HZ-3034")
+
+    def test_all_completed_flights_mark_day_completed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "board.csv"
+            write_rows(
+                path,
+                [
+                    {
+                        "observed_at": "2026-06-14T18:00:00+11:00",
+                        "direction": "departure",
+                        "flight_date": "2026-06-14",
+                        "flight_time": "10:20",
+                        "flight_numbers": "HZ-3032",
+                        "status_normalized": "departed",
+                        "actual_date": "2026-06-14",
+                    },
+                    {
+                        "observed_at": "2026-06-14T18:00:00+11:00",
+                        "direction": "departure",
+                        "flight_date": "2026-06-14",
+                        "flight_time": "15:10",
+                        "flight_numbers": "HZ-3034",
+                        "status_normalized": "departed",
+                        "actual_date": "2026-06-14",
+                    },
+                ],
+            )
+
+            schedule = get_flight_schedule_for_date(date(2026, 6, 14), board_path=path)
+
+        self.assertTrue(schedule.completed_same_day)
+        self.assertFalse(schedule.moved_next_day)
+        self.assertEqual(schedule.total_flights, 2)
+        self.assertEqual(schedule.completed_flights, 2)
+        self.assertIsNone(schedule.active_flight_index)
+
+    def test_completed_then_next_flight_delay_marks_active_flight_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "board.csv"
+            write_rows(
+                path,
+                [
+                    {
+                        "observed_at": "2026-06-14T12:00:00+11:00",
+                        "direction": "departure",
+                        "flight_date": "2026-06-14",
+                        "flight_time": "10:20",
+                        "flight_numbers": "HZ-3032",
+                        "status_normalized": "departed",
+                        "actual_date": "2026-06-14",
+                    },
+                    {
+                        "observed_at": "2026-06-14T12:00:00+11:00",
+                        "direction": "departure",
+                        "flight_date": "2026-06-14",
+                        "flight_time": "15:10",
+                        "flight_numbers": "HZ-3034",
+                        "status_normalized": "delayed",
+                        "actual_date": "2026-06-15",
+                    },
+                ],
+            )
+
+            schedule = get_flight_schedule_for_date(date(2026, 6, 14), board_path=path)
+
+        self.assertTrue(schedule.moved_next_day)
+        self.assertFalse(schedule.completed_same_day)
+        self.assertEqual(schedule.completed_flights, 1)
+        self.assertEqual(schedule.unavailable_flights, 1)
+        self.assertEqual(schedule.active_flight_index, 2)
+        self.assertEqual(schedule.active_flight_status, "delayed")
+
+    def test_first_cancelled_keeps_first_flight_as_failed_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "board.csv"
+            write_rows(
+                path,
+                [
+                    {
+                        "observed_at": "2026-06-14T09:00:00+11:00",
+                        "direction": "departure",
+                        "flight_date": "2026-06-14",
+                        "flight_time": "10:20",
+                        "flight_numbers": "HZ-3032",
+                        "status_normalized": "cancelled",
+                        "actual_date": "2026-06-14",
+                    },
+                    {
+                        "observed_at": "2026-06-14T09:00:00+11:00",
+                        "direction": "departure",
+                        "flight_date": "2026-06-14",
+                        "flight_time": "15:10",
+                        "flight_numbers": "HZ-3034",
+                        "status_normalized": "scheduled",
+                        "actual_date": "2026-06-14",
+                    },
+                ],
+            )
+
+            schedule = get_flight_schedule_for_date(date(2026, 6, 14), board_path=path)
+
+        self.assertTrue(schedule.moved_next_day)
+        self.assertFalse(schedule.completed_same_day)
+        self.assertEqual(schedule.completed_flights, 0)
+        self.assertEqual(schedule.unavailable_flights, 1)
+        self.assertEqual(schedule.pending_flights, 1)
+        self.assertEqual(schedule.active_flight_index, 1)
+        self.assertEqual(schedule.active_flight_status, "cancelled")
 
     @patch("app.services.flight_schedule.get_settings")
     def test_missing_board_file_returns_unavailable(self, get_settings_mock) -> None:

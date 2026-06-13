@@ -233,7 +233,9 @@ async def predict(
         (
             "schedule_snapshot request_id=%s target_date=%s source=%s available=%s reason=%s "
             "observed_at=%s flight_numbers=%s first_departure_hour=%s first_scheduled_hour=%s "
-            "last_scheduled_hour=%s moved_next_day=%s completed_same_day=%s status_summary=%s"
+            "last_scheduled_hour=%s moved_next_day=%s completed_same_day=%s status_summary=%s "
+            "total_flights=%s completed_flights=%s unavailable_flights=%s pending_flights=%s "
+            "active_flight_index=%s active_flight_hour=%s active_flight_numbers=%s active_flight_status=%s"
         ),
         request_id,
         target_date.isoformat(),
@@ -248,6 +250,14 @@ async def predict(
         schedule.moved_next_day,
         schedule.completed_same_day,
         schedule.status_summary,
+        schedule.total_flights,
+        schedule.completed_flights,
+        schedule.unavailable_flights,
+        schedule.pending_flights,
+        schedule.active_flight_index,
+        schedule.active_flight_hour,
+        schedule.active_flight_numbers,
+        schedule.active_flight_status,
     )
 
     weather = await fetch_weather_for_date(target_date)
@@ -500,6 +510,15 @@ def log_prediction(
         "schedule_moved_next_day": result.schedule.moved_next_day if result.schedule else None,
         "schedule_completed_same_day": result.schedule.completed_same_day if result.schedule else None,
         "schedule_status_summary": result.schedule.status_summary if result.schedule else None,
+        "schedule_total_flights": result.schedule.total_flights if result.schedule else None,
+        "schedule_completed_flights": result.schedule.completed_flights if result.schedule else None,
+        "schedule_unavailable_flights": result.schedule.unavailable_flights if result.schedule else None,
+        "schedule_pending_flights": result.schedule.pending_flights if result.schedule else None,
+        "schedule_active_flight_index": result.schedule.active_flight_index if result.schedule else None,
+        "schedule_active_flight_hour": result.schedule.active_flight_hour if result.schedule else None,
+        "schedule_active_flight_time": result.schedule.active_flight_time if result.schedule else None,
+        "schedule_active_flight_numbers": result.schedule.active_flight_numbers if result.schedule else None,
+        "schedule_active_flight_status": result.schedule.active_flight_status if result.schedule else None,
         "relative_humidity_2m": result.weather.relative_humidity_2m,
         "cloud_cover": result.weather.cloud_cover,
         "history_source": result.history.source,

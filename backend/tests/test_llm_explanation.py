@@ -231,6 +231,99 @@ class ExplanationTests(unittest.TestCase):
         self.assertNotIn("Данные погоды", explanation)
         self.assertNotIn("Исторически", explanation)
 
+    def test_first_cancelled_among_multiple_flights_is_not_reported_as_all_cancelled(self) -> None:
+        weather = WeatherSnapshot(source="test", available=True, flight_window_available=True)
+        schedule = FlightScheduleSnapshot(
+            source="test",
+            available=True,
+            moved_next_day=True,
+            total_flights=2,
+            unavailable_flights=1,
+            pending_flights=1,
+            active_flight_index=1,
+        )
+
+        explanation = fallback_explanation(
+            target_date="2026-06-14",
+            decision="no",
+            probability_flight=0.0,
+            confidence="high",
+            horizon_days=0,
+            weather=weather,
+            history=history_snapshot(),
+            schedule=schedule,
+        )
+
+        self.assertEqual(explanation, "По табло первый рейс отменен или перенесен для этой даты.")
+        self.assertNotIn("все рейсы", explanation)
+        self.assertNotIn("Данные погоды", explanation)
+
+    def test_next_flight_cancelled_after_completed_flight_is_short(self) -> None:
+        weather = WeatherSnapshot(source="test", available=True, flight_window_available=True)
+        schedule = FlightScheduleSnapshot(
+            source="test",
+            available=True,
+            moved_next_day=True,
+            total_flights=2,
+            completed_flights=1,
+            unavailable_flights=1,
+            active_flight_index=2,
+        )
+
+        explanation = fallback_explanation(
+            target_date="2026-06-14",
+            decision="no",
+            probability_flight=0.0,
+            confidence="high",
+            horizon_days=0,
+            weather=weather,
+            history=history_snapshot(),
+            schedule=schedule,
+        )
+
+        self.assertEqual(
+            explanation,
+            "По табло выполнено 1 из 2 рейсов. Следующий рейс отменен или перенесен для этой даты.",
+        )
+        self.assertNotIn("Данные погоды", explanation)
+
+    def test_partial_completed_day_weather_explanation_targets_next_flight(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=True,
+            flight_window_visibility=6400,
+            flight_window_cloud_cover_low=38,
+            wind_speed_10m=22,
+            wind_direction_10m=90,
+            relative_humidity_2m=81,
+        )
+        schedule = FlightScheduleSnapshot(
+            source="test",
+            available=True,
+            total_flights=2,
+            completed_flights=1,
+            pending_flights=1,
+            active_flight_index=2,
+        )
+
+        explanation = fallback_explanation(
+            target_date="2026-06-14",
+            decision="yes",
+            probability_flight=0.64,
+            confidence="medium",
+            horizon_days=0,
+            weather=weather,
+            history=history_snapshot(),
+            schedule=schedule,
+        )
+
+        self.assertIn("По табло выполнено 1 из 2 рейсов. Прогноз относится к следующему рейсу.", explanation)
+        self.assertIn("Да. Данные погоды:", explanation)
+        self.assertIn("видимость - около 6400 м", explanation)
+        self.assertIn("ветер - скорость около 6.1 м/с, направление восточный (E)", explanation)
+        self.assertIn("вероятность вылета — 64%", explanation)
+
     def test_board_completed_explanation_is_short(self) -> None:
         weather = WeatherSnapshot(source="test", available=True, flight_window_available=True)
         schedule = FlightScheduleSnapshot(
@@ -252,6 +345,32 @@ class ExplanationTests(unittest.TestCase):
         )
 
         self.assertEqual(explanation, "По табло рейс уже выполнен для этой даты.")
+        self.assertNotIn("Данные погоды", explanation)
+        self.assertNotIn("Исторически", explanation)
+
+    def test_multiple_completed_flights_explanation_is_short(self) -> None:
+        weather = WeatherSnapshot(source="test", available=True, flight_window_available=True)
+        schedule = FlightScheduleSnapshot(
+            source="test",
+            available=True,
+            completed_same_day=True,
+            total_flights=2,
+            completed_flights=2,
+            observed_at="2026-06-14T18:07:30+11:00",
+        )
+
+        explanation = fallback_explanation(
+            target_date="2026-06-14",
+            decision="yes",
+            probability_flight=0.85,
+            confidence="high",
+            horizon_days=0,
+            weather=weather,
+            history=history_snapshot(),
+            schedule=schedule,
+        )
+
+        self.assertEqual(explanation, "По табло сегодняшние рейсы успешно выполнены.")
         self.assertNotIn("Данные погоды", explanation)
         self.assertNotIn("Исторически", explanation)
 

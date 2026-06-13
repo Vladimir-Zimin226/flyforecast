@@ -128,9 +128,24 @@ function decisionLabel(decision) {
 
 function decisionToneLabel(result) {
   if (result.schedule?.moved_next_day) {
+    if ((result.schedule?.total_flights || 0) > 1 && (result.schedule?.completed_flights || 0) > 0) {
+      return `Выполнено ${result.schedule.completed_flights} из ${result.schedule.total_flights}, следующий рейс отменен`;
+    }
+    if ((result.schedule?.total_flights || 0) > 1 && (result.schedule?.unavailable_flights || 0) >= result.schedule.total_flights) {
+      return "По табло все рейсы отменены или перенесены";
+    }
+    if ((result.schedule?.total_flights || 0) > 1 && result.schedule?.active_flight_index === 1) {
+      return "По табло первый рейс отменен или перенесен";
+    }
+    if ((result.schedule?.total_flights || 0) > 1) {
+      return "По табло следующий рейс отменен или перенесен";
+    }
     return "По табло рейс отменен для этой даты";
   }
   if (result.schedule?.completed_same_day) {
+    if ((result.schedule?.total_flights || 0) > 1) {
+      return "Сегодняшние рейсы успешно выполнены";
+    }
     return "По табло рейс уже выполнен для этой даты";
   }
 
@@ -157,6 +172,16 @@ function lowConfidenceHint(result) {
 
 function hasFinalBoardStatusForSelectedDate(result) {
   return Boolean(result.schedule?.moved_next_day || result.schedule?.completed_same_day);
+}
+
+function scheduleProgressLabel(result) {
+  const total = result.schedule?.total_flights || 0;
+  const completed = result.schedule?.completed_flights || 0;
+  if (total <= 1 || completed <= 0 || hasFinalBoardStatusForSelectedDate(result)) {
+    return null;
+  }
+
+  return `По табло выполнено ${completed} из ${total} рейсов. Прогноз относится к следующему рейсу.`;
 }
 
 function weatherExplanationDetails(explanation) {
@@ -1366,6 +1391,10 @@ export default function App() {
             <p className="lead">
               Вероятность выполнения рейса — {probabilityPercent(result.probability_flight)}%.
             </p>
+          )}
+
+          {!hasFinalBoardStatusForSelectedDate(result) && scheduleProgressLabel(result) && (
+            <p className="hint">{scheduleProgressLabel(result)}</p>
           )}
 
           {!hasFinalBoardStatusForSelectedDate(result) && weatherExplanationDetails(result.explanation) && (

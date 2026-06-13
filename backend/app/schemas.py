@@ -217,6 +217,16 @@ class WeatherSnapshot(BaseModel):
     flight_window_fog_low_cloud_risk_level: str | None = None
 
 
+class FlightScheduleFlight(BaseModel):
+    direction: str | None = None
+    flight_time: str | None = None
+    flight_numbers: str | None = None
+    status: str | None = None
+    actual_date: str | None = None
+    hour: int | None = None
+    state: str | None = None
+
+
 class FlightScheduleSnapshot(BaseModel):
     source: str
     available: bool
@@ -231,6 +241,16 @@ class FlightScheduleSnapshot(BaseModel):
     moved_next_day: bool = False
     completed_same_day: bool = False
     status_summary: str | None = None
+    total_flights: int = 0
+    completed_flights: int = 0
+    unavailable_flights: int = 0
+    pending_flights: int = 0
+    active_flight_index: int | None = None
+    active_flight_hour: int | None = None
+    active_flight_time: str | None = None
+    active_flight_numbers: str | None = None
+    active_flight_status: str | None = None
+    flights: list[FlightScheduleFlight] = Field(default_factory=list)
 
 
 class HistoricalSnapshot(BaseModel):
