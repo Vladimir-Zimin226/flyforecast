@@ -125,11 +125,26 @@ def is_board_completed_for_target_date(schedule: FlightScheduleSnapshot | None) 
     return bool(schedule is not None and schedule.available and schedule.completed_same_day)
 
 
+def _schedule_uses_arrival_facts(schedule: FlightScheduleSnapshot | None) -> bool:
+    return bool(
+        schedule is not None
+        and schedule.flights
+        and all((flight.direction or "").lower() == "arrival" for flight in schedule.flights)
+    )
+
+
+def _completed_progress_text(schedule: FlightScheduleSnapshot) -> str:
+    if _schedule_uses_arrival_facts(schedule):
+        verb = "прибыл" if schedule.completed_flights == 1 else "прибыло"
+        return f"По табло {verb} {schedule.completed_flights} из {schedule.total_flights} рейсов"
+    return f"По табло выполнено {schedule.completed_flights} из {schedule.total_flights} рейсов"
+
+
 def _board_cancelled_explanation(schedule: FlightScheduleSnapshot | None) -> str:
     if schedule is not None and schedule.total_flights > 1:
         if schedule.completed_flights > 0:
             return (
-                f"По табло выполнено {schedule.completed_flights} из {schedule.total_flights} рейсов. "
+                f"{_completed_progress_text(schedule)}. "
                 "Следующий рейс отменен или перенесен для этой даты."
             )
         if schedule.unavailable_flights >= schedule.total_flights:
@@ -142,7 +157,11 @@ def _board_cancelled_explanation(schedule: FlightScheduleSnapshot | None) -> str
 
 def _board_completed_explanation(schedule: FlightScheduleSnapshot | None) -> str:
     if schedule is not None and schedule.total_flights > 1:
+        if _schedule_uses_arrival_facts(schedule):
+            return "По табло сегодняшние рейсы успешно прибыли."
         return "По табло сегодняшние рейсы успешно выполнены."
+    if _schedule_uses_arrival_facts(schedule):
+        return "По табло рейс уже прибыл для этой даты."
     return "По табло рейс уже выполнен для этой даты."
 
 
@@ -215,7 +234,7 @@ def _weather_model_explanation(
         and not schedule.moved_next_day
     ):
         lines.append(
-            f"По табло выполнено {schedule.completed_flights} из {schedule.total_flights} рейсов. "
+            f"{_completed_progress_text(schedule)}. "
             "Прогноз относится к следующему рейсу."
         )
 

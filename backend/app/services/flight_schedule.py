@@ -71,6 +71,10 @@ def _flight_key(row: dict[str, str]) -> tuple[str, str, str]:
     return direction, flight_numbers or flight_time, flight_time
 
 
+def _direction(row: dict[str, str]) -> str:
+    return _clean_text(row.get("direction")).lower()
+
+
 def _latest_row_per_flight(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     latest_by_key: dict[tuple[str, str, str], dict[str, str]] = {}
     for row in rows:
@@ -109,8 +113,9 @@ def _unavailable(reason: str, source: str) -> FlightScheduleSnapshot:
 def _flight_state(row: dict[str, str], target_date: date) -> str:
     status = _clean_text(row.get("status_normalized"))
     actual_date = _parse_date(row.get("actual_date"))
+    completed_statuses = {"arrived"} if _direction(row) == "arrival" else COMPLETED_BOARD_STATUSES
 
-    if status in COMPLETED_BOARD_STATUSES:
+    if status in completed_statuses:
         if actual_date is None or actual_date == target_date:
             return "completed"
         if actual_date > target_date:
@@ -123,6 +128,15 @@ def _flight_state(row: dict[str, str], target_date: date) -> str:
         return "unavailable"
 
     return "pending"
+
+
+def _schedule_rows_for_flight_state(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    arrival_rows = [row for row in rows if _direction(row) == "arrival"]
+    if arrival_rows:
+        return arrival_rows
+
+    departure_rows = [row for row in rows if _direction(row) == "departure"]
+    return departure_rows or rows
 
 
 def _flight_snapshot(row: dict[str, str], target_date: date) -> FlightScheduleFlight:
@@ -153,9 +167,10 @@ def get_flight_schedule_for_date(
     if not rows:
         return _unavailable(f"No board schedule rows for {target_date.isoformat()}.", source)
 
-    latest_observation_rows = _latest_rows(rows)
     latest_flight_rows = _latest_row_per_flight(rows)
-    schedule_rows = latest_flight_rows or latest_observation_rows or rows
+    latest_observation_rows = _latest_rows(rows)
+    deduplicated_rows = latest_flight_rows or latest_observation_rows or rows
+    schedule_rows = _schedule_rows_for_flight_state(deduplicated_rows)
 
     scheduled_hours = [
         hour

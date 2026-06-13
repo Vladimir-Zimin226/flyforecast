@@ -283,6 +283,21 @@ def _format_wind_ms(value_kmh: float) -> str:
     return f"{value_ms} м/с"
 
 
+def _schedule_uses_arrival_facts(schedule: FlightScheduleSnapshot | None) -> bool:
+    return bool(
+        schedule is not None
+        and schedule.flights
+        and all((flight.direction or "").lower() == "arrival" for flight in schedule.flights)
+    )
+
+
+def _completed_progress_text(schedule: FlightScheduleSnapshot) -> str:
+    if _schedule_uses_arrival_facts(schedule):
+        verb = "прибыл" if schedule.completed_flights == 1 else "прибыло"
+        return f"по табло {verb} {schedule.completed_flights} из {schedule.total_flights} рейсов"
+    return f"по табло выполнено {schedule.completed_flights} из {schedule.total_flights} рейсов"
+
+
 def get_factor_summary(
     weather: WeatherSnapshot,
     history: HistoricalSnapshot,
@@ -304,8 +319,7 @@ def get_factor_summary(
         if schedule.moved_next_day:
             if schedule.total_flights > 1 and schedule.completed_flights > 0:
                 factors.append(
-                    f"по табло выполнено {schedule.completed_flights} из {schedule.total_flights} рейсов, "
-                    "следующий рейс отменен или перенесен"
+                    f"{_completed_progress_text(schedule)}, следующий рейс отменен или перенесен"
                 )
             elif schedule.total_flights > 1 and schedule.unavailable_flights >= schedule.total_flights:
                 factors.append("по последним строкам табло все рейсы на эту дату отменены или перенесены")
@@ -315,18 +329,24 @@ def get_factor_summary(
                 factors.append("по последним строкам табло рейс на эту дату перенесен на следующую дату")
         elif schedule.completed_same_day:
             if schedule.total_flights > 1:
-                factors.append("по последним строкам табло сегодняшние рейсы уже выполнены")
+                if _schedule_uses_arrival_facts(schedule):
+                    factors.append("по последним строкам табло сегодняшние рейсы уже прибыли")
+                else:
+                    factors.append("по последним строкам табло сегодняшние рейсы уже выполнены")
             else:
-                factors.append("по последним строкам табло рейс на эту дату уже выполнялся")
+                if _schedule_uses_arrival_facts(schedule):
+                    factors.append("по последним строкам табло рейс на эту дату уже прибыл")
+                else:
+                    factors.append("по последним строкам табло рейс на эту дату уже выполнялся")
         elif schedule.total_flights > 1 and schedule.completed_flights > 0:
             factors.append(
-                f"по табло выполнено {schedule.completed_flights} из {schedule.total_flights} рейсов, "
-                "прогноз относится к следующему рейсу"
+                f"{_completed_progress_text(schedule)}, прогноз относится к следующему рейсу"
             )
         elif schedule.first_departure_hour is not None and schedule.last_scheduled_hour is not None:
+            schedule_label = "рейс" if _schedule_uses_arrival_facts(schedule) else "вылет"
             factors.append(
                 "расписание табло на дату: "
-                f"первый вылет около {schedule.first_departure_hour:02d}:00, "
+                f"первый {schedule_label} около {schedule.first_departure_hour:02d}:00, "
                 f"последний рейс около {schedule.last_scheduled_hour:02d}:00"
             )
 

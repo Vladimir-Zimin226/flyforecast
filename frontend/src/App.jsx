@@ -129,7 +129,7 @@ function decisionLabel(decision) {
 function decisionToneLabel(result) {
   if (result.schedule?.moved_next_day) {
     if ((result.schedule?.total_flights || 0) > 1 && (result.schedule?.completed_flights || 0) > 0) {
-      return `Выполнено ${result.schedule.completed_flights} из ${result.schedule.total_flights}, следующий рейс отменен`;
+      return `${completedProgressText(result, { withPrefix: false, capitalized: true })}, следующий рейс отменен`;
     }
     if ((result.schedule?.total_flights || 0) > 1 && (result.schedule?.unavailable_flights || 0) >= result.schedule.total_flights) {
       return "По табло все рейсы отменены или перенесены";
@@ -144,7 +144,13 @@ function decisionToneLabel(result) {
   }
   if (result.schedule?.completed_same_day) {
     if ((result.schedule?.total_flights || 0) > 1) {
+      if (scheduleUsesArrivalFacts(result)) {
+        return "Сегодняшние рейсы успешно прибыли";
+      }
       return "Сегодняшние рейсы успешно выполнены";
+    }
+    if (scheduleUsesArrivalFacts(result)) {
+      return "По табло рейс уже прибыл для этой даты";
     }
     return "По табло рейс уже выполнен для этой даты";
   }
@@ -174,6 +180,25 @@ function hasFinalBoardStatusForSelectedDate(result) {
   return Boolean(result.schedule?.moved_next_day || result.schedule?.completed_same_day);
 }
 
+function scheduleUsesArrivalFacts(result) {
+  const flights = result.schedule?.flights || [];
+  return flights.length > 0 && flights.every((flight) => String(flight.direction || "").toLowerCase() === "arrival");
+}
+
+function capitalizeFirst(value) {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
+}
+
+function completedProgressText(result, { withPrefix = true, capitalized = false } = {}) {
+  const total = result.schedule?.total_flights || 0;
+  const completed = result.schedule?.completed_flights || 0;
+  const text = scheduleUsesArrivalFacts(result)
+    ? `${completed === 1 ? "прибыл" : "прибыло"} ${completed} из ${total} рейсов`
+    : `выполнено ${completed} из ${total} рейсов`;
+  const prefixed = withPrefix ? `По табло ${text}` : text;
+  return capitalized ? capitalizeFirst(prefixed) : prefixed;
+}
+
 function scheduleProgressLabel(result) {
   const total = result.schedule?.total_flights || 0;
   const completed = result.schedule?.completed_flights || 0;
@@ -181,7 +206,7 @@ function scheduleProgressLabel(result) {
     return null;
   }
 
-  return `По табло выполнено ${completed} из ${total} рейсов. Прогноз относится к следующему рейсу.`;
+  return `${completedProgressText(result)}. Прогноз относится к следующему рейсу.`;
 }
 
 function weatherExplanationDetails(explanation) {
