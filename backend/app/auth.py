@@ -14,6 +14,8 @@ from app.schemas import validate_email_address
 security = HTTPBearer()
 optional_security = HTTPBearer(auto_error=False)
 
+DEFAULT_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 15
+
 
 def _b64encode(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("utf-8").rstrip("=")
@@ -24,7 +26,7 @@ def _b64decode(data: str) -> bytes:
     return base64.urlsafe_b64decode(data + padding)
 
 
-def create_token(username: str, ttl_seconds: int = 60 * 60 * 24) -> str:
+def create_token(username: str, ttl_seconds: int = DEFAULT_TOKEN_TTL_SECONDS) -> str:
     settings = get_settings()
     payload = {
         "sub": username,
