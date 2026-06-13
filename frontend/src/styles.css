@@ -1081,6 +1081,11 @@ button:disabled {
   border-color: var(--color-tertiary);
 }
 
+.admin-backup-button {
+  width: fit-content;
+  white-space: nowrap;
+}
+
 .admin-users {
   display: grid;
   gap: 14px;

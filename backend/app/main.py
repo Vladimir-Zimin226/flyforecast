@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth import create_token, optional_user, require_admin, require_user
@@ -24,6 +24,7 @@ from app.schemas import (
     UserProfileResponse,
 )
 from app.services.background_services import get_admin_services_status
+from app.services.admin_backup import build_admin_backup_archive
 from app.services.flight_schedule import get_flight_schedule_for_date
 from app.services.history import get_historical_snapshot
 from app.services.explanations import generate_user_explanation
@@ -151,6 +152,20 @@ def admin_users(admin: Annotated[str, Depends(require_admin)]) -> AdminUsersResp
 def admin_services(admin: Annotated[str, Depends(require_admin)]) -> AdminServicesResponse:
     logger.info("admin_services_requested admin=%s", admin)
     return AdminServicesResponse(**get_admin_services_status())
+
+
+@app.get("/admin/backup")
+def admin_backup(admin: Annotated[str, Depends(require_admin)]) -> Response:
+    logger.info("admin_backup_requested admin=%s", admin)
+    filename, content = build_admin_backup_archive()
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 @app.patch("/admin/users/{email}", response_model=UserProfileResponse)

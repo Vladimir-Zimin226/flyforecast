@@ -654,6 +654,8 @@ export default function App() {
   const [adminServices, setAdminServices] = useState(null);
   const [adminEditEmail, setAdminEditEmail] = useState("");
   const [adminEditForm, setAdminEditForm] = useState({});
+  const [adminBackupStatus, setAdminBackupStatus] = useState("");
+  const [adminBackupLoading, setAdminBackupLoading] = useState(false);
   const [authMode, setAuthMode] = useState("register");
   const [authPanelOpen, setAuthPanelOpen] = useState(false);
   const [authPromptMessage, setAuthPromptMessage] = useState("");
@@ -1011,6 +1013,46 @@ export default function App() {
     setAdminServices(null);
     setAdminEditEmail("");
     setAdminEditForm({});
+    setAdminBackupStatus("");
+    setAdminBackupLoading(false);
+  }
+
+  async function handleAdminBackupDownload() {
+    setError("");
+    setFeedbackStatus("");
+    setAdminBackupStatus("");
+    setAdminBackupLoading(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/admin/backup`, {
+        headers: {
+          Authorization: `Bearer ${adminToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || "Не удалось скачать бэкап.");
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("Content-Disposition") || "";
+      const filenameMatch = disposition.match(/filename="?(?<filename>[^";]+)"?/);
+      const filename = filenameMatch?.groups?.filename || "flyforecast_service_backup.zip";
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setAdminBackupStatus("Бэкап скачан.");
+    } catch (err) {
+      setError(err.message || "Ошибка скачивания бэкапа");
+    } finally {
+      setAdminBackupLoading(false);
+    }
   }
 
   function startEditUser(user) {
@@ -1429,7 +1471,16 @@ export default function App() {
               <div className="eyebrow">Админ-панель</div>
               <h2>Пользователи и аналитика</h2>
             </div>
+            <button
+              type="button"
+              className="secondary admin-backup-button"
+              onClick={handleAdminBackupDownload}
+              disabled={adminBackupLoading}
+            >
+              {adminBackupLoading ? "Готовлю архив..." : "Скачать бэкап"}
+            </button>
           </div>
+          {adminBackupStatus && <div className="success">{adminBackupStatus}</div>}
 
           <div className="meta-grid">
             <div>
