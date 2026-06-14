@@ -5,9 +5,15 @@ from app.services.historical_features import (
     HistoricalFlightDay,
     build_historical_ml_features,
 )
+from app.services.historical_probability import user_probability_from_model_score
 
 
 class HistoricalFeaturesTests(unittest.TestCase):
+    def test_historical_ml_threshold_maps_to_user_fifty_percent(self) -> None:
+        self.assertEqual(user_probability_from_model_score(0.31, 0.31), 0.5)
+        self.assertLess(user_probability_from_model_score(0.2704, 0.31), 0.5)
+        self.assertGreater(user_probability_from_model_score(0.3107, 0.31), 0.5)
+
     def test_features_use_only_rows_known_by_as_of_date(self) -> None:
         rows = [
             HistoricalFlightDay(date=date(2026, 5, 1), status="completed"),

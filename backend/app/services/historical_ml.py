@@ -12,6 +12,7 @@ from app.services.historical_features import (
     build_historical_ml_features,
     load_historical_flight_days,
 )
+from app.services.historical_probability import user_probability_from_model_score
 
 
 logger = logging.getLogger("flyforecast.historical_ml")
@@ -22,6 +23,8 @@ class HistoricalMlPrediction:
     available: bool
     probability_flight: float | None = None
     threshold: float | None = None
+    raw_probability_flight: float | None = None
+    raw_threshold: float | None = None
     model_version: str | None = None
     data_version: str | None = None
     model_name: str | None = None
@@ -147,12 +150,15 @@ def predict_historical_ml(target_date: date, as_of_date: date) -> HistoricalMlPr
     import pandas as pd
 
     frame = pd.DataFrame([{column: features[column] for column in feature_columns}])
-    probability = float(model.predict_proba(frame)[0, 1])
+    raw_probability = float(model.predict_proba(frame)[0, 1])
+    probability = user_probability_from_model_score(raw_probability, threshold)
 
     return HistoricalMlPrediction(
         available=True,
-        probability_flight=round(min(max(probability, 0.0), 1.0), 4),
-        threshold=threshold,
+        probability_flight=probability,
+        threshold=0.5,
+        raw_probability_flight=round(min(max(raw_probability, 0.0), 1.0), 4),
+        raw_threshold=threshold,
         model_version=str(bundle.metadata.get("model_version") or "historical-ml"),
         data_version=str(bundle.metadata.get("data_version") or "historical-ml-data"),
         model_name=model_name,

@@ -366,13 +366,16 @@ async def predict(
         logger.info(
             (
                 "historical_ml_snapshot request_id=%s target_date=%s available=%s "
-                "probability_flight=%s threshold=%s model_version=%s data_version=%s model_name=%s reason=%s"
+                "probability_flight=%s threshold=%s raw_probability_flight=%s raw_threshold=%s "
+                "model_version=%s data_version=%s model_name=%s reason=%s"
             ),
             request_id,
             target_date.isoformat(),
             historical_ml.available,
             historical_ml.probability_flight,
             historical_ml.threshold,
+            historical_ml.raw_probability_flight,
+            historical_ml.raw_threshold,
             historical_ml.model_version,
             historical_ml.data_version,
             historical_ml.model_name,
