@@ -9,10 +9,14 @@ from app.services.historical_probability import user_probability_from_model_scor
 
 
 class HistoricalFeaturesTests(unittest.TestCase):
-    def test_historical_ml_threshold_maps_to_user_fifty_percent(self) -> None:
-        self.assertEqual(user_probability_from_model_score(0.31, 0.31), 0.5)
-        self.assertLess(user_probability_from_model_score(0.2704, 0.31), 0.5)
-        self.assertGreater(user_probability_from_model_score(0.3107, 0.31), 0.5)
+    def test_historical_ml_yes_scores_with_low_threshold_are_lifted(self) -> None:
+        self.assertEqual(user_probability_from_model_score(0.31, 0.31), 0.51)
+        self.assertEqual(user_probability_from_model_score(0.3107, 0.31), 0.5107)
+        self.assertEqual(user_probability_from_model_score(0.5, 0.31), 0.7)
+
+    def test_historical_ml_no_scores_do_not_get_lifted_to_fifty_percent(self) -> None:
+        self.assertEqual(user_probability_from_model_score(0.2704, 0.31), 0.2704)
+        self.assertLess(user_probability_from_model_score(0.56, 0.57), 0.5)
 
     def test_features_use_only_rows_known_by_as_of_date(self) -> None:
         rows = [
