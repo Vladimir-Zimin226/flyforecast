@@ -356,16 +356,21 @@ def _recalculate_forecast_metrics(conn: sqlite3.Connection) -> dict[str, Any]:
     absolute_error_sum = 0.0
 
     for row in rows:
-        probability = calculate_probability(
-            horizon_days=int(row["horizon_days"]),
-            weather=_weather_snapshot_from_prediction(row),
-            history=_history_snapshot_from_prediction(row),
-            schedule=_schedule_snapshot_from_prediction(row),
-        )
-        decision = make_decision(
-            probability_flight=probability,
-            horizon_days=int(row["horizon_days"]),
-        )
+        row_model_version = row["model_version"] if "model_version" in row.keys() else ""
+        if str(row_model_version).startswith("historical-ml"):
+            probability = float(row["probability_flight"])
+            decision = row["decision"]
+        else:
+            probability = calculate_probability(
+                horizon_days=int(row["horizon_days"]),
+                weather=_weather_snapshot_from_prediction(row),
+                history=_history_snapshot_from_prediction(row),
+                schedule=_schedule_snapshot_from_prediction(row),
+            )
+            decision = make_decision(
+                probability_flight=probability,
+                horizon_days=int(row["horizon_days"]),
+            )
         decision_binary = 1 if decision == "yes" else 0
         outcome_binary = int(row["outcome_binary"])
         predicted_yes += int(decision_binary == 1)

@@ -3,6 +3,7 @@
 *.session-journal
 flight_status_snapshot_*.tar.gz
 backup/
+backend/app/model_artifacts/
 
 data/raw/
 data/interim/

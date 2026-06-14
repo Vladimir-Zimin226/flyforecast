@@ -257,6 +257,7 @@ def fallback_explanation(
     weather: WeatherSnapshot,
     history: HistoricalSnapshot,
     schedule: FlightScheduleSnapshot | None = None,
+    forecast_mode: str | None = None,
 ) -> str:
     probability_percent = round(probability_flight * 100)
     if is_board_cancelled_for_target_date(schedule):
@@ -273,7 +274,13 @@ def fallback_explanation(
         )
 
     history_text = _history_details_text(history)
-    horizon_text = "Точного погодного прогноза на эту дату пока нет, поэтому оценка опирается на историю и сезонность."
+    if forecast_mode == "historical_ml":
+        horizon_text = (
+            "Точного погодного прогноза на эту дату пока нет, поэтому оценка рассчитана "
+            "климатико-исторической моделью по календарю и накопленной истории вылетов."
+        )
+    else:
+        horizon_text = "Точного погодного прогноза на эту дату пока нет, поэтому оценка опирается на историю и сезонность."
 
     if decision == "yes":
         return (
@@ -296,6 +303,7 @@ def generate_user_explanation(
     weather: WeatherSnapshot,
     history: HistoricalSnapshot,
     schedule: FlightScheduleSnapshot | None = None,
+    forecast_mode: str | None = None,
 ) -> str:
     return fallback_explanation(
         target_date=target_date,
@@ -306,4 +314,5 @@ def generate_user_explanation(
         weather=weather,
         history=history,
         schedule=schedule,
+        forecast_mode=forecast_mode,
     )

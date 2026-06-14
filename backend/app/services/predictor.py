@@ -272,8 +272,9 @@ def decision_threshold(horizon_days: int) -> float:
     return 0.30
 
 
-def make_decision(probability_flight: float, horizon_days: int) -> str:
-    return "yes" if probability_flight >= decision_threshold(horizon_days) else "no"
+def make_decision(probability_flight: float, horizon_days: int, threshold: float | None = None) -> str:
+    cutoff = decision_threshold(horizon_days) if threshold is None else threshold
+    return "yes" if probability_flight >= cutoff else "no"
 
 
 def _format_wind_ms(value_kmh: float) -> str:

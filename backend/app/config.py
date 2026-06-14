@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     flight_status_dataset_path: str = "/app/data/raw/flight_status/kunashir_flight_status_hourly.csv"
     flight_status_errors_path: str = "/app/data/raw/flight_status/collection_errors.csv"
     background_service_stale_hours: int = 26
+    historical_ml_enabled: bool = True
+    historical_ml_model_path: str = "/app/app/model_artifacts/historical_model_v1.joblib"
+    historical_ml_metadata_path: str = "/app/app/model_artifacts/historical_model_v1.json"
 
     airport_latitude: float = 43.958
     airport_longitude: float = 145.683

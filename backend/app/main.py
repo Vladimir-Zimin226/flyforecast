@@ -32,11 +32,13 @@ from app.services.predictor import (
     DATA_VERSION,
     DISCLAIMER,
     MODEL_VERSION,
+    apply_schedule_guardrails,
     calculate_probability,
     get_confidence,
     get_horizon_days,
     make_decision,
 )
+from app.services.historical_ml import predict_historical_ml
 from app.services.weather import OPEN_METEO_MAX_HORIZON_DAYS, fetch_weather_for_date
 from app.services.users import (
     authenticate_user,
@@ -354,6 +356,43 @@ async def predict(
         history=history,
         schedule=schedule,
     )
+    forecast_mode = "weather_model" if horizon_days <= OPEN_METEO_MAX_HORIZON_DAYS and weather.available else "climate_history"
+    model_version = MODEL_VERSION
+    data_version = DATA_VERSION
+    historical_ml_threshold: float | None = None
+
+    if horizon_days > OPEN_METEO_MAX_HORIZON_DAYS:
+        historical_ml = predict_historical_ml(target_date=target_date, as_of_date=today)
+        logger.info(
+            (
+                "historical_ml_snapshot request_id=%s target_date=%s available=%s "
+                "probability_flight=%s threshold=%s model_version=%s data_version=%s model_name=%s reason=%s"
+            ),
+            request_id,
+            target_date.isoformat(),
+            historical_ml.available,
+            historical_ml.probability_flight,
+            historical_ml.threshold,
+            historical_ml.model_version,
+            historical_ml.data_version,
+            historical_ml.model_name,
+            historical_ml.reason,
+        )
+        if historical_ml.available and historical_ml.probability_flight is not None:
+            probability_flight = apply_schedule_guardrails(
+                historical_ml.probability_flight,
+                schedule=schedule,
+            )
+            lower_bound = (
+                0.0
+                if schedule is not None and schedule.available and schedule.moved_next_day
+                else 0.05
+            )
+            probability_flight = round(min(max(probability_flight, lower_bound), 0.95), 4)
+            historical_ml_threshold = historical_ml.threshold
+            forecast_mode = "historical_ml"
+            model_version = historical_ml.model_version or MODEL_VERSION
+            data_version = historical_ml.data_version or DATA_VERSION
 
     confidence = get_confidence(
         horizon_days=horizon_days,
@@ -365,20 +404,22 @@ async def predict(
     decision = make_decision(
         probability_flight=probability_flight,
         horizon_days=horizon_days,
+        threshold=historical_ml_threshold,
     )
 
     logger.info(
         (
             "prediction_calculated request_id=%s target_date=%s probability_flight=%s "
-            "decision=%s confidence=%s model_version=%s data_version=%s"
+            "decision=%s confidence=%s forecast_mode=%s model_version=%s data_version=%s"
         ),
         request_id,
         target_date.isoformat(),
         probability_flight,
         decision,
         confidence,
-        MODEL_VERSION,
-        DATA_VERSION,
+        forecast_mode,
+        model_version,
+        data_version,
     )
 
     explanation = generate_user_explanation(
@@ -390,9 +431,9 @@ async def predict(
         weather=weather,
         history=history,
         schedule=schedule,
+        forecast_mode=forecast_mode,
     )
 
-    forecast_mode = "weather_model" if horizon_days <= OPEN_METEO_MAX_HORIZON_DAYS and weather.available else "climate_history"
     if schedule is not None and schedule.available and (schedule.moved_next_day or schedule.completed_same_day):
         forecast_mode_label = "Статус по табло аэропорта"
     else:
@@ -421,8 +462,8 @@ async def predict(
         weather=weather,
         schedule=schedule,
         history=history,
-        model_version=MODEL_VERSION,
-        data_version=DATA_VERSION,
+        model_version=model_version,
+        data_version=data_version,
         disclaimer=DISCLAIMER,
     )
 

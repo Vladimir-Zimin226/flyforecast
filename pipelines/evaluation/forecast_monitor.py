@@ -22,10 +22,12 @@ from app.services.history import get_historical_snapshot
 from app.services.predictor import (
     DATA_VERSION,
     MODEL_VERSION,
+    apply_schedule_guardrails,
     calculate_probability,
     get_confidence,
     make_decision,
 )
+from app.services.historical_ml import predict_historical_ml
 from app.services.weather import OPEN_METEO_MAX_HORIZON_DAYS, fetch_weather_for_date
 
 
@@ -350,8 +352,26 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
 
         history = get_historical_snapshot(target_date)
         probability = calculate_probability(horizon_days=horizon, weather=weather, history=history, schedule=schedule)
-        confidence = get_confidence(horizon_days=horizon, weather=weather, history=history)
-        decision = make_decision(probability_flight=probability, horizon_days=horizon)
+        prediction_model_version = MODEL_VERSION
+        prediction_data_version = DATA_VERSION
+        decision_threshold = None
+
+        if horizon > OPEN_METEO_MAX_HORIZON_DAYS:
+            historical_ml = predict_historical_ml(target_date=target_date, as_of_date=run_date)
+            if historical_ml.available and historical_ml.probability_flight is not None:
+                probability = apply_schedule_guardrails(historical_ml.probability_flight, schedule=schedule)
+                lower_bound = 0.0 if schedule.available and schedule.moved_next_day else 0.05
+                probability = round(min(max(probability, lower_bound), 0.95), 4)
+                decision_threshold = historical_ml.threshold
+                prediction_model_version = historical_ml.model_version or MODEL_VERSION
+                prediction_data_version = historical_ml.data_version or DATA_VERSION
+
+        confidence = get_confidence(horizon_days=horizon, weather=weather, history=history, schedule=schedule)
+        decision = make_decision(
+            probability_flight=probability,
+            horizon_days=horizon,
+            threshold=decision_threshold,
+        )
 
         cursor = conn.execute(
             """
@@ -458,8 +478,8 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
                 probability,
                 decision,
                 confidence,
-                MODEL_VERSION,
-                DATA_VERSION,
+                prediction_model_version,
+                prediction_data_version,
                 weather.source,
                 int(weather.available),
                 weather.reason,

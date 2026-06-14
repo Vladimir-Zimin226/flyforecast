@@ -269,7 +269,7 @@ class PredictResponse(BaseModel):
     probability_flight: float = Field(ge=0.0, le=1.0)
     confidence: str
     horizon_days: int
-    forecast_mode: str = Field(pattern="^(weather_model|climate_history)$")
+    forecast_mode: str = Field(pattern="^(weather_model|climate_history|historical_ml)$")
     forecast_mode_label: str
     explanation: str
     weather: WeatherSnapshot
