@@ -15,6 +15,7 @@ import httpx
 
 AIRPORT_BOARD_URL = "https://airportus.ru/board/"
 AURORA_STATUS_URL = os.getenv("AURORA_STATUS_URL", "https://www.flyaurora.ru/")
+OPEN_METEO_URL = os.getenv("OPEN_METEO_URL", "https://api.open-meteo.com/v1/forecast")
 DEFAULT_OUTPUT = "data/raw/flight_status/kunashir_flight_status_hourly.csv"
 DEFAULT_ERRORS_OUTPUT = "data/raw/flight_status/collection_errors.csv"
 DEFAULT_TIMEZONE = os.getenv("AIRPORT_TIMEZONE", "Asia/Sakhalin")
@@ -338,7 +339,7 @@ async def fetch_weather(client: httpx.AsyncClient, observed_at: datetime, latitu
     }
 
     try:
-        response = await client.get("https://api.open-meteo.com/v1/forecast", params=params)
+        response = await client.get(OPEN_METEO_URL, params=params)
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     weather_cache_fresh_hours: int = 1
     weather_live_cache_fresh_minutes: int = 15
     weather_cache_stale_hours: int = 72
+    open_meteo_url: str = "https://api.open-meteo.com/v1/forecast"
     open_meteo_failure_cooldown_minutes: int = 30
     weather_forecast_window_start_hour: int = 8
     weather_forecast_window_end_hour: int = 20

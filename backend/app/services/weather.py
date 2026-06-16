@@ -37,7 +37,6 @@ HOURLY_FIELDS = [
     "visibility",
 ]
 
-OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_MAX_HORIZON_DAYS = 15
 OPEN_METEO_RETRIES = 2
 OPEN_METEO_RETRY_DELAY_SECONDS = 0.8
@@ -632,7 +631,7 @@ async def _fetch_open_meteo_snapshots(settings: Settings) -> tuple[dict[date, We
     async with httpx.AsyncClient(timeout=10) as client:
         for attempt in range(OPEN_METEO_RETRIES + 1):
             try:
-                response = await client.get(OPEN_METEO_URL, params=params)
+                response = await client.get(settings.open_meteo_url, params=params)
                 response.raise_for_status()
                 snapshots = _open_meteo_payload_to_snapshots(response.json(), settings)
                 if not snapshots:
