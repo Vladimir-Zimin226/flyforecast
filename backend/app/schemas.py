@@ -215,6 +215,7 @@ class WeatherSnapshot(BaseModel):
     flight_window_cloud_cover_low: float | None = None
     flight_window_fog_low_cloud_risk_score: float | None = None
     flight_window_fog_low_cloud_risk_level: str | None = None
+    hourly_rows: list[dict[str, float | int | None]] | None = None
 
 
 class FlightScheduleFlight(BaseModel):

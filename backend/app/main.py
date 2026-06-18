@@ -277,7 +277,7 @@ async def predict(
         schedule.active_flight_status,
     )
 
-    weather = await fetch_weather_for_date(target_date)
+    weather = await fetch_weather_for_date(target_date, schedule=schedule)
 
     logger.info(
         (

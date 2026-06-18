@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     weather_forecast_window_start_hour: int = 8
     weather_forecast_window_end_hour: int = 20
     weather_flight_window_min_hours: int = 3
+    weather_scheduled_window_duration_hours: float = 1.5
     weather_flight_window_min_visibility: float = 5000.0
     weather_flight_window_max_cloud_low: float = 80.0
     weather_flight_window_max_wind_gusts: float = 65.0

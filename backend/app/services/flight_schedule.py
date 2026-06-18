@@ -200,6 +200,16 @@ def get_flight_schedule_for_date(
     deduplicated_rows = latest_flight_rows or latest_observation_rows or rows
     schedule_rows = _schedule_rows_for_flight_state(deduplicated_rows)
 
+    departure_hours = [
+        hour
+        for hour in (
+            _parse_hour(_effective_flight_time(row, target_date))
+            for row in deduplicated_rows
+            if _clean_text(row.get("direction")) == "departure"
+        )
+        if hour is not None
+    ]
+
     scheduled_hours = [
         hour
         for hour in (_parse_hour(_effective_flight_time(row, target_date)) for row in schedule_rows)
@@ -207,16 +217,6 @@ def get_flight_schedule_for_date(
     ]
     if not scheduled_hours:
         return _unavailable(f"Board rows for {target_date.isoformat()} do not include parseable flight times.", source)
-
-    departure_hours = [
-        hour
-        for hour in (
-            _parse_hour(_effective_flight_time(row, target_date))
-            for row in schedule_rows
-            if _clean_text(row.get("direction")) == "departure"
-        )
-        if hour is not None
-    ]
 
     statuses: list[str] = []
     flights = sorted(
@@ -247,11 +247,12 @@ def get_flight_schedule_for_date(
 
     first_scheduled_hour = min(scheduled_hours)
     last_scheduled_hour = max(scheduled_hours)
-    first_departure_hour = (
-        active_flight.hour
-        if active_flight is not None and active_flight.hour is not None
-        else min(departure_hours) if departure_hours else first_scheduled_hour
-    )
+    if departure_hours:
+        first_departure_hour = min(departure_hours)
+    elif active_flight is not None and active_flight.hour is not None:
+        first_departure_hour = active_flight.hour
+    else:
+        first_departure_hour = first_scheduled_hour
     completed_same_day = total_flights > 0 and completed_flights == total_flights
     moved_next_day = active_flight is not None and active_flight.state == "unavailable"
 

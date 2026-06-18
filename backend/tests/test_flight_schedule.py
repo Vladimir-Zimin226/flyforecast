@@ -29,7 +29,7 @@ def write_rows(path: Path, rows: list[dict[str, str]]) -> None:
 
 
 class FlightScheduleTests(unittest.TestCase):
-    def test_prefers_arrival_rows_for_flight_fact_and_window(self) -> None:
+    def test_uses_departure_time_for_weather_window_and_arrival_for_flight_fact(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "board.csv"
             write_rows(
@@ -60,10 +60,10 @@ class FlightScheduleTests(unittest.TestCase):
 
         self.assertIsInstance(schedule, FlightScheduleSnapshot)
         self.assertTrue(schedule.available)
-        self.assertEqual(schedule.first_departure_hour, 13)
+        self.assertEqual(schedule.first_departure_hour, 10)
         self.assertEqual(schedule.first_scheduled_hour, 13)
         self.assertEqual(schedule.last_scheduled_hour, 13)
-        self.assertEqual(schedule.schedule_window_start_hour, 12)
+        self.assertEqual(schedule.schedule_window_start_hour, 9)
         self.assertEqual(schedule.schedule_window_end_hour, 14)
         self.assertFalse(schedule.moved_next_day)
         self.assertFalse(schedule.completed_same_day)

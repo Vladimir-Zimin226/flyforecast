@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from app.config import Settings, get_settings
-from app.schemas import WeatherSnapshot
+from app.schemas import FlightScheduleSnapshot, WeatherSnapshot
 from app.services.fog_risk import (
     FOG_WEATHER_CODES,
     calculate_dew_point_spread,
@@ -175,6 +175,18 @@ def _is_flight_opportunity_hour(row: dict[str, float | int | None], settings: Se
     return True
 
 
+def _is_flight_opportunity_aggregate(aggregated: dict[str, float | None], settings: Settings) -> bool:
+    return _is_flight_opportunity_hour(
+        {
+            "visibility": aggregated.get("visibility"),
+            "weather_code": aggregated.get("weather_code"),
+            "wind_gusts_10m": aggregated.get("wind_gusts_10m"),
+            "precipitation": aggregated.get("precipitation"),
+        },
+        settings,
+    )
+
+
 def _flight_window_sort_key(rows: list[dict[str, float | int | None]]) -> tuple:
     aggregated = _aggregate_weather_rows(rows)
     visibility = aggregated.get("visibility")
@@ -262,6 +274,7 @@ def _build_weather_snapshot(
     aggregation_window_end_hour: int | None = None,
     aggregation_window_hours: int | None = None,
     flight_window: dict[str, float | int | bool | str | None] | None = None,
+    hourly_rows: list[dict[str, float | int | None]] | None = None,
 ) -> WeatherSnapshot:
     dew_point_spread = calculate_dew_point_spread(
         aggregated.get("temperature_2m"),
@@ -300,6 +313,7 @@ def _build_weather_snapshot(
         flight_window_cloud_cover_low=flight_window.get("flight_window_cloud_cover_low"),
         flight_window_fog_low_cloud_risk_score=flight_window.get("flight_window_fog_low_cloud_risk_score"),
         flight_window_fog_low_cloud_risk_level=flight_window.get("flight_window_fog_low_cloud_risk_level"),
+        hourly_rows=hourly_rows,
     )
 
 
@@ -309,10 +323,67 @@ def _weather_window(settings: Settings) -> tuple[int, int]:
     return start_hour, end_hour
 
 
+def _scheduled_weather_window(
+    schedule: FlightScheduleSnapshot | None,
+    settings: Settings,
+) -> tuple[int, int] | None:
+    if schedule is None or not schedule.available or schedule.first_departure_hour is None:
+        return None
+
+    start_hour = min(max(int(schedule.first_departure_hour), 0), 23)
+    duration_hours = max(float(settings.weather_scheduled_window_duration_hours), 1.0)
+    end_hour = min(23, start_hour + int(math.ceil(duration_hours)))
+    return start_hour, end_hour
+
+
 def _hour_in_window(hour: int, start_hour: int, end_hour: int) -> bool:
     if start_hour <= end_hour:
         return start_hour <= hour <= end_hour
     return hour >= start_hour or hour <= end_hour
+
+
+def _rows_in_hour_window(
+    rows: list[dict[str, float | int | None]],
+    *,
+    start_hour: int,
+    end_hour: int,
+) -> list[dict[str, float | int | None]]:
+    selected: list[dict[str, float | int | None]] = []
+    for row in rows:
+        hour = row.get("hour")
+        if hour is None:
+            continue
+        if _hour_in_window(int(hour), start_hour, end_hour):
+            selected.append(row)
+    return selected
+
+
+def _apply_scheduled_weather_window(
+    snapshot: WeatherSnapshot,
+    schedule: FlightScheduleSnapshot | None,
+    settings: Settings,
+) -> WeatherSnapshot:
+    window = _scheduled_weather_window(schedule, settings)
+    if not snapshot.available or window is None or not snapshot.hourly_rows:
+        return snapshot
+
+    start_hour, end_hour = window
+    rows = _rows_in_hour_window(snapshot.hourly_rows, start_hour=start_hour, end_hour=end_hour)
+    if not rows:
+        return snapshot
+
+    aggregated = _aggregate_weather_rows(rows)
+    flight_window_rows = rows if _is_flight_opportunity_aggregate(aggregated, settings) else None
+    return _build_weather_snapshot(
+        source=snapshot.source,
+        reason=snapshot.reason,
+        aggregated=aggregated,
+        aggregation_window_start_hour=start_hour,
+        aggregation_window_end_hour=end_hour,
+        aggregation_window_hours=len(rows),
+        flight_window=_flight_window_payload(flight_window_rows),
+        hourly_rows=snapshot.hourly_rows,
+    )
 
 
 def _hour_from_open_meteo_time(value: str) -> int | None:
@@ -614,6 +685,7 @@ def _open_meteo_payload_to_snapshots(payload: dict, settings: Settings) -> dict[
             aggregation_window_end_hour=end_hour,
             aggregation_window_hours=len(window_indices),
             flight_window=_flight_window_payload(flight_window_rows),
+            hourly_rows=window_rows,
         )
 
     return snapshots
@@ -748,6 +820,7 @@ def _met_no_payload_to_snapshot(
         aggregation_window_end_hour=end_hour,
         aggregation_window_hours=len(rows),
         flight_window=_flight_window_payload(flight_window_rows),
+        hourly_rows=rows,
     )
 
 
@@ -802,7 +875,10 @@ async def _fetch_met_no_snapshot(
     return None, "MET Norway is temporarily unavailable."
 
 
-async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
+async def fetch_weather_for_date(
+    target_date: date,
+    schedule: FlightScheduleSnapshot | None = None,
+) -> WeatherSnapshot:
     """
     Forecast weather is used only for the near horizon. For resilience, we keep
     a persistent Open-Meteo cache and fall back to MET Norway when needed.
@@ -821,7 +897,9 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
     if cached is not None:
         cached_snapshot, age_hours, _ = cached
         fresh_max_age_hours = _fresh_cache_max_age_hours(settings, horizon_days)
-        if age_hours <= fresh_max_age_hours:
+        schedule_window = _scheduled_weather_window(schedule, settings)
+        cache_supports_schedule_window = schedule_window is None or bool(cached_snapshot.hourly_rows)
+        if age_hours <= fresh_max_age_hours and cache_supports_schedule_window:
             logger.info(
                 "weather_cache_fresh_hit target_date=%s horizon_days=%s age_hours=%.2f max_age_hours=%.2f",
                 target_date.isoformat(),
@@ -830,9 +908,16 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
                 fresh_max_age_hours,
             )
             return _cache_snapshot_with_source(
-                cached_snapshot,
+                _apply_scheduled_weather_window(cached_snapshot, schedule, settings),
                 source="open-meteo-cache",
                 reason=None,
+            )
+        if age_hours <= fresh_max_age_hours and not cache_supports_schedule_window:
+            logger.info(
+                "weather_cache_refresh_needed_for_schedule_window target_date=%s horizon_days=%s age_hours=%.2f",
+                target_date.isoformat(),
+                horizon_days,
+                age_hours,
             )
 
     circuit_open, cooldown_until, circuit_reason = _is_open_meteo_circuit_open(settings)
@@ -852,7 +937,7 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
             _store_open_meteo_cache(settings, snapshots)
             snapshot = snapshots.get(target_date)
             if snapshot is not None:
-                return snapshot
+                return _apply_scheduled_weather_window(snapshot, schedule, settings)
             open_meteo_error = "Open-Meteo returned no hourly weather rows for target date."
         else:
             _record_open_meteo_failure(settings, open_meteo_error)
@@ -867,7 +952,7 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
                 open_meteo_error,
             )
             return _cache_snapshot_with_source(
-                cached_snapshot,
+                _apply_scheduled_weather_window(cached_snapshot, schedule, settings),
                 source="open-meteo-cache-stale",
                 reason=(
                     "Open-Meteo временно недоступен; используется сохранённый прогноз "
@@ -878,7 +963,7 @@ async def fetch_weather_for_date(target_date: date) -> WeatherSnapshot:
     if settings.met_no_fallback_enabled and horizon_days <= MET_NO_MAX_HORIZON_DAYS:
         met_no_snapshot, met_no_error = await _fetch_met_no_snapshot(settings, target_date)
         if met_no_snapshot is not None:
-            return met_no_snapshot
+            return _apply_scheduled_weather_window(met_no_snapshot, schedule, settings)
         return _unavailable_weather(
             f"{open_meteo_error or 'Open-Meteo is unavailable'}; {met_no_error or 'MET Norway is unavailable'}"
         )
