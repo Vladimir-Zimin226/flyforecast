@@ -884,7 +884,7 @@ async def fetch_weather_for_date(
     a persistent Open-Meteo cache and fall back to MET Norway when needed.
     """
     settings = get_settings()
-    today = datetime.now().date()
+    today = datetime.now(ZoneInfo(settings.airport_timezone)).date()
     horizon_days = (target_date - today).days
 
     if horizon_days < 0:

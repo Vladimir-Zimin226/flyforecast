@@ -22,6 +22,7 @@ DEFAULT_TIMEZONE = os.getenv("AIRPORT_TIMEZONE", "Asia/Sakhalin")
 KUNASHIR_CITY = "Южно-Курильск"
 DEFAULT_AIRPORT_LATITUDE = float(os.getenv("AIRPORT_LATITUDE", "43.958"))
 DEFAULT_AIRPORT_LONGITUDE = float(os.getenv("AIRPORT_LONGITUDE", "145.683"))
+FLIGHT_NUMBERS_PATTERN = re.compile(r"^[A-ZА-Я0-9]{1,4}-\d{3,4}(?:\s+[A-ZА-Я0-9]{1,4}-\d{3,4})*$")
 RUSSIAN_MONTHS = {
     "янв": 1,
     "фев": 2,
@@ -256,6 +257,140 @@ class AirportBoardParser(HTMLParser):
         self.rows.append(row)
 
 
+class BoardTextParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tokens: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        text = clean_text(data)
+        if text:
+            self.tokens.append(text)
+
+
+def _is_flight_numbers_token(value: str) -> bool:
+    return bool(FLIGHT_NUMBERS_PATTERN.fullmatch(clean_text(value)))
+
+
+def _is_scheduled_token(value: str) -> bool:
+    return clean_text(value).lower().startswith("по расписанию")
+
+
+def _is_registration_token(value: str) -> bool:
+    return clean_text(value).lower().startswith("регистрация")
+
+
+def _is_board_header_token(value: str) -> bool:
+    return clean_text(value).lower() in {
+        "рейс",
+        "авиакомпания",
+        "город",
+        "время",
+        "по расписанию",
+        "фактическое",
+        "cтатус",
+        "статус",
+    }
+
+
+def _looks_like_time_or_date(value: str) -> bool:
+    return bool(re.search(r"(?:(?:\d{1,2}\.\d{1,2})\s+)?\d{1,2}:\d{2}", clean_text(value)))
+
+
+def _looks_like_status(value: str) -> bool:
+    lower = clean_text(value).lower()
+    return any(
+        marker in lower
+        for marker in (
+            "отмен",
+            "задерж",
+            "перенес",
+            "перенос",
+            "отлож",
+            "совмещ",
+            "объедин",
+            "вылетел",
+            "прибыл",
+            "в пол",
+        )
+    )
+
+
+def parse_board_text_fallback(html: str, source: str, source_url: str) -> list[BoardFlight]:
+    parser = BoardTextParser()
+    parser.feed(html)
+    tokens = [token for token in parser.tokens if token]
+
+    rows: list[BoardFlight] = []
+    direction = "departure"
+    header_count = 0
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if clean_text(token).lower() == "рейс":
+            header_count += 1
+            direction = "arrival" if header_count >= 2 else "departure"
+            index += 1
+            continue
+
+        if not _is_flight_numbers_token(token):
+            index += 1
+            continue
+
+        flight_numbers = token
+        cursor = index + 1
+        while cursor < len(tokens) and (_is_board_header_token(tokens[cursor]) or _is_registration_token(tokens[cursor])):
+            cursor += 1
+        if cursor >= len(tokens):
+            break
+
+        route = tokens[cursor]
+        cursor += 1
+        while cursor < len(tokens) and not _is_scheduled_token(tokens[cursor]):
+            if _is_flight_numbers_token(tokens[cursor]):
+                break
+            cursor += 1
+        if cursor >= len(tokens) or not _is_scheduled_token(tokens[cursor]):
+            index += 1
+            continue
+
+        scheduled_raw = tokens[cursor]
+        cursor += 1
+        actual_raw = ""
+        status_raw = ""
+        if cursor < len(tokens) and _looks_like_time_or_date(tokens[cursor]):
+            actual_raw = tokens[cursor]
+            cursor += 1
+        if (
+            cursor < len(tokens)
+            and not _is_flight_numbers_token(tokens[cursor])
+            and not _is_registration_token(tokens[cursor])
+            and not _is_board_header_token(tokens[cursor])
+            and _looks_like_status(tokens[cursor])
+        ):
+            status_raw = tokens[cursor]
+            cursor += 1
+
+        raw_row_text = clean_text(" | ".join(value for value in (flight_numbers, route, scheduled_raw, actual_raw, status_raw) if value))
+        rows.append(
+            BoardFlight(
+                source=source,
+                source_url=source_url,
+                direction=direction,
+                flight_numbers=flight_numbers,
+                route=route,
+                scheduled_raw=scheduled_raw,
+                actual_raw=actual_raw,
+                status_raw=status_raw,
+                radar_flight_number="",
+                raw_row_text=raw_row_text,
+            )
+        )
+        index = max(cursor, index + 1)
+
+    return rows
+
+
 async def fetch_text(client: httpx.AsyncClient, url: str) -> str:
     response = await client.get(
         url,
@@ -272,8 +407,15 @@ async def fetch_text(client: httpx.AsyncClient, url: str) -> str:
 def parse_board_html(html: str, source: str, source_url: str) -> list[BoardFlight]:
     parser = AirportBoardParser(source=source, source_url=source_url)
     parser.feed(html)
-    return [
+    rows = [
         row for row in parser.rows
+        if KUNASHIR_CITY.lower() in row.route.lower()
+    ]
+    if rows:
+        return rows
+
+    return [
+        row for row in parse_board_text_fallback(html, source=source, source_url=source_url)
         if KUNASHIR_CITY.lower() in row.route.lower()
     ]
 

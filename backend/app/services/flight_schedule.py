@@ -9,6 +9,7 @@ from app.schemas import FlightScheduleFlight, FlightScheduleSnapshot
 COMPLETED_BOARD_STATUSES = {"departed", "arrived", "in_flight"}
 NEXT_DAY_BOARD_STATUSES = COMPLETED_BOARD_STATUSES | {"delayed", "combined"}
 UNAVAILABLE_BOARD_STATUSES = {"cancelled", "combined"}
+NO_KUNASHIR_ROWS_ERROR = "No Kunashir rows found in parsed board HTML."
 
 
 def _clean_text(value: object) -> str:
@@ -81,6 +82,15 @@ def _latest_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return [row for row in rows if _clean_text(row.get("observed_at")) == latest]
 
 
+def _latest_observed_at(rows: list[dict[str, str]]) -> datetime | None:
+    observed_values = [
+        observed_at
+        for observed_at in (_parse_observed_at(row.get("observed_at")) for row in rows)
+        if observed_at is not None
+    ]
+    return max(observed_values) if observed_values else None
+
+
 def _flight_key(row: dict[str, str]) -> tuple[str, str, str]:
     direction = _clean_text(row.get("direction"))
     flight_numbers = _clean_text(row.get("flight_numbers"))
@@ -148,6 +158,32 @@ def _unavailable(reason: str, source: str) -> FlightScheduleSnapshot:
     return FlightScheduleSnapshot(source=source, available=False, reason=reason)
 
 
+def _no_board_flights(reason: str, source: str, observed_at: datetime) -> FlightScheduleSnapshot:
+    return FlightScheduleSnapshot(
+        source=source,
+        available=True,
+        reason=reason,
+        observed_at=observed_at.isoformat(),
+        moved_next_day=True,
+        completed_same_day=False,
+        status_summary="no_board_flights",
+        total_flights=0,
+        completed_flights=0,
+        unavailable_flights=0,
+        pending_flights=0,
+        active_flight_status="no_board_flights",
+    )
+
+
+def _latest_no_kunashir_error(errors_path: Path) -> datetime | None:
+    rows = [
+        row
+        for row in _read_rows(errors_path)
+        if NO_KUNASHIR_ROWS_ERROR in _clean_text(row.get("error"))
+    ]
+    return _latest_observed_at(rows)
+
+
 def _flight_state(row: dict[str, str], target_date: date) -> str:
     status = _clean_text(row.get("status_normalized"))
     actual_date = _parse_date(row.get("actual_date"))
@@ -204,10 +240,12 @@ def get_flight_schedule_for_date(
     target_date: date,
     *,
     board_path: Path | None = None,
+    errors_path: Path | None = None,
     source: str = "airportus-board",
 ) -> FlightScheduleSnapshot:
     settings = get_settings()
     path = board_path or Path(settings.flight_status_dataset_path)
+    errors = errors_path or Path(settings.flight_status_errors_path)
     all_rows = _read_rows(path)
     rows = [
         row
@@ -217,6 +255,13 @@ def get_flight_schedule_for_date(
     if not rows:
         rows = _carryover_next_day_rows(all_rows, target_date)
     if not rows:
+        latest_no_kunashir_error = _latest_no_kunashir_error(errors)
+        if latest_no_kunashir_error is not None and latest_no_kunashir_error.date() >= target_date:
+            return _no_board_flights(
+                f"Fresh airport board has no Kunashir rows for {target_date.isoformat()}.",
+                source,
+                latest_no_kunashir_error,
+            )
         return _unavailable(f"No board schedule rows for {target_date.isoformat()}.", source)
 
     latest_observation_rows = _latest_rows(rows)

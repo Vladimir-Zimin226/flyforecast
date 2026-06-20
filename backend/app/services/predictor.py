@@ -1,5 +1,7 @@
 from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
+from app.config import get_settings
 from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
 
 
@@ -14,7 +16,9 @@ DISCLAIMER = (
 
 
 def get_horizon_days(target_date: date) -> int:
-    return (target_date - datetime.now().date()).days
+    settings = get_settings()
+    today = datetime.now(ZoneInfo(settings.airport_timezone)).date()
+    return (target_date - today).days
 
 
 def get_confidence(

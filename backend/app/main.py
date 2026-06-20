@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -214,7 +215,7 @@ async def predict(
         utm_source,
     )
 
-    today = datetime.now().date()
+    today = datetime.now(ZoneInfo(settings.airport_timezone)).date()
     max_date = today + timedelta(days=365)
 
     if target_date < today:
