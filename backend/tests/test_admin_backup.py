@@ -64,6 +64,9 @@ class AdminBackupTests(unittest.TestCase):
             weather_db = root / "weather_cache.sqlite"
             board_csv = root / "board.csv"
             errors_csv = root / "errors.csv"
+            sakhalin_board_csv = root / "sakhalin_board.csv"
+            sakhalin_weather_csv = root / "sakhalin_weather.csv"
+            sakhalin_errors_csv = root / "sakhalin_errors.csv"
             dataset_csv = root / "dataset.csv"
             prediction_log = root / "prediction_logs.jsonl"
             feedback_log = root / "feedback_logs.jsonl"
@@ -114,6 +117,17 @@ class AdminBackupTests(unittest.TestCase):
 
             board_csv.write_text("flight_date,status_normalized\n2026-06-14,departed\n", encoding="utf-8")
             errors_csv.write_text("observed_at,error\n2026-06-14T00:00:00,none\n", encoding="utf-8")
+            sakhalin_board_csv.write_text(
+                "observed_at,airport_code,route,status_normalized\n"
+                "2026-06-20T23:37:07+11:00,OHH,Оха,scheduled\n",
+                encoding="utf-8",
+            )
+            sakhalin_weather_csv.write_text(
+                "observed_at,airport_code,forecast_time,visibility\n"
+                "2026-06-20T23:37:07+11:00,OHH,2026-06-21T09:00,10000\n",
+                encoding="utf-8",
+            )
+            sakhalin_errors_csv.write_text("observed_at,source,error\n", encoding="utf-8")
             dataset_csv.write_text("date,outcome\n2026-06-14,completed\n", encoding="utf-8")
             prediction_log.write_text(json.dumps({"request_id": "abc", "decision": "yes"}) + "\n", encoding="utf-8")
             feedback_log.write_text("", encoding="utf-8")
@@ -125,6 +139,9 @@ class AdminBackupTests(unittest.TestCase):
                 weather_forecast_cache_path=str(weather_db),
                 flight_status_dataset_path=str(board_csv),
                 flight_status_errors_path=str(errors_csv),
+                sakhalin_airports_board_output=str(sakhalin_board_csv),
+                sakhalin_airports_weather_output=str(sakhalin_weather_csv),
+                sakhalin_airports_errors_output=str(sakhalin_errors_csv),
                 flyforecast_dataset_path=str(dataset_csv),
                 prediction_log_path=str(prediction_log),
                 feedback_log_path=str(feedback_log),
@@ -143,6 +160,9 @@ class AdminBackupTests(unittest.TestCase):
             self.assertIn("forecast_monitor/metrics_summary.csv", names)
             self.assertIn("weather/weather_forecast_cache.csv", names)
             self.assertIn("raw/flight_status/kunashir_flight_status_hourly.csv", names)
+            self.assertIn("raw/sakhalin_airports/sakhalin_airport_board_hourly.csv", names)
+            self.assertIn("raw/sakhalin_airports/sakhalin_airport_weather_hourly.csv", names)
+            self.assertIn("raw/sakhalin_airports/collection_errors.csv", names)
             self.assertIn("legacy_jsonl/prediction_logs.csv", names)
 
             users_csv = archive.read("postgres/users.csv").decode("utf-8-sig")

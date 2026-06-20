@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     met_no_user_agent: str = "flyforecast.ru/0.1(+https://flyforecast.ru;admin@example.com)"
     flight_status_dataset_path: str = "/app/data/raw/flight_status/kunashir_flight_status_hourly.csv"
     flight_status_errors_path: str = "/app/data/raw/flight_status/collection_errors.csv"
+    sakhalin_airports_board_output: str = "/app/data/raw/sakhalin_airports/sakhalin_airport_board_hourly.csv"
+    sakhalin_airports_weather_output: str = "/app/data/raw/sakhalin_airports/sakhalin_airport_weather_hourly.csv"
+    sakhalin_airports_errors_output: str = "/app/data/raw/sakhalin_airports/collection_errors.csv"
     background_service_stale_hours: int = 26
     historical_ml_enabled: bool = True
     historical_ml_model_path: str = "/app/app/model_artifacts/historical_model_v1.joblib"

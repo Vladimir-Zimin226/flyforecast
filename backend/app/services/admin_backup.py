@@ -356,6 +356,24 @@ def build_admin_backup_archive(settings: Settings | None = None) -> tuple[str, b
         _add_file_if_exists(
             archive,
             manifest,
+            Path(settings.sakhalin_airports_board_output),
+            "raw/sakhalin_airports/sakhalin_airport_board_hourly.csv",
+        )
+        _add_file_if_exists(
+            archive,
+            manifest,
+            Path(settings.sakhalin_airports_weather_output),
+            "raw/sakhalin_airports/sakhalin_airport_weather_hourly.csv",
+        )
+        _add_file_if_exists(
+            archive,
+            manifest,
+            Path(settings.sakhalin_airports_errors_output),
+            "raw/sakhalin_airports/collection_errors.csv",
+        )
+        _add_file_if_exists(
+            archive,
+            manifest,
             Path(settings.flyforecast_dataset_path),
             "processed/dataset_daily_flights.csv",
         )
