@@ -341,7 +341,8 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
             board_path=Path(settings.flight_status_dataset_path),
         )
         weather = await fetch_weather_for_date(target_date, schedule=schedule)
-        if horizon <= OPEN_METEO_MAX_HORIZON_DAYS and not weather.available:
+        has_final_board_status = schedule.available and (schedule.moved_next_day or schedule.completed_same_day)
+        if horizon <= OPEN_METEO_MAX_HORIZON_DAYS and not weather.available and not has_final_board_status:
             logger.warning(
                 "prediction_skipped_weather_unavailable target_date=%s horizon_days=%s reason=%s",
                 target_date.isoformat(),

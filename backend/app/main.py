@@ -319,7 +319,10 @@ async def predict(
         weather.flight_window_fog_low_cloud_risk_level,
     )
 
-    if horizon_days <= OPEN_METEO_MAX_HORIZON_DAYS and not weather.available:
+    has_final_board_status = schedule is not None and schedule.available and (
+        schedule.moved_next_day or schedule.completed_same_day
+    )
+    if horizon_days <= OPEN_METEO_MAX_HORIZON_DAYS and not weather.available and not has_final_board_status:
         logger.warning(
             "predict_blocked_weather_unavailable request_id=%s target_date=%s reason=%s",
             request_id,

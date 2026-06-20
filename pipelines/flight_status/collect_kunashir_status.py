@@ -22,6 +22,22 @@ DEFAULT_TIMEZONE = os.getenv("AIRPORT_TIMEZONE", "Asia/Sakhalin")
 KUNASHIR_CITY = "Южно-Курильск"
 DEFAULT_AIRPORT_LATITUDE = float(os.getenv("AIRPORT_LATITUDE", "43.958"))
 DEFAULT_AIRPORT_LONGITUDE = float(os.getenv("AIRPORT_LONGITUDE", "145.683"))
+RUSSIAN_MONTHS = {
+    "янв": 1,
+    "фев": 2,
+    "мар": 3,
+    "апр": 4,
+    "май": 5,
+    "мая": 5,
+    "июн": 6,
+    "июл": 7,
+    "авг": 8,
+    "сен": 9,
+    "сент": 9,
+    "окт": 10,
+    "ноя": 11,
+    "дек": 12,
+}
 
 WEATHER_FIELDS = [
     "temperature_2m",
@@ -262,6 +278,18 @@ def parse_board_html(html: str, source: str, source_url: str) -> list[BoardFligh
     ]
 
 
+def resolve_board_date(day: int, month: int, observed_at: datetime) -> date:
+    year = observed_at.year
+    parsed_date = date(year, month, day)
+
+    if (parsed_date - observed_at.date()).days > 180:
+        parsed_date = date(year - 1, month, day)
+    elif (observed_at.date() - parsed_date).days > 180:
+        parsed_date = date(year + 1, month, day)
+
+    return parsed_date
+
+
 def parse_board_datetime(raw: str, observed_at: datetime) -> tuple[str, str]:
     value = clean_text(raw)
     value = re.sub(r"^по\s+расписанию\s*", "", value, flags=re.IGNORECASE).strip()
@@ -273,17 +301,58 @@ def parse_board_datetime(raw: str, observed_at: datetime) -> tuple[str, str]:
     day_raw, month_raw, hour_raw, minute_raw = match.groups()
 
     if day_raw and month_raw:
-        year = observed_at.year
-        parsed_date = date(year, int(month_raw), int(day_raw))
-
-        if (parsed_date - observed_at.date()).days > 180:
-            parsed_date = date(year - 1, int(month_raw), int(day_raw))
-        elif (observed_at.date() - parsed_date).days > 180:
-            parsed_date = date(year + 1, int(month_raw), int(day_raw))
+        parsed_date = resolve_board_date(int(day_raw), int(month_raw), observed_at)
     else:
         parsed_date = observed_at.date()
 
     return parsed_date.isoformat(), f"{int(hour_raw):02d}:{int(minute_raw):02d}"
+
+
+def has_explicit_board_date(raw: str) -> bool:
+    value = clean_text(raw)
+    if re.search(r"\b\d{1,2}\.\d{1,2}\b", value):
+        return True
+    return bool(
+        re.search(
+            r"\b\d{1,2}\s+(?:янв|фев|мар|апр|май|мая|июн|июл|авг|сен|сент|окт|ноя|дек)\w*\b",
+            value,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def parse_board_text_date(raw: str, observed_at: datetime) -> str:
+    value = clean_text(raw)
+    candidates: list[tuple[int, str]] = []
+
+    for numeric_match in re.finditer(r"\b(\d{1,2})\.(\d{1,2})\b", value):
+        day_raw, month_raw = numeric_match.groups()
+        candidates.append(
+            (
+                numeric_match.start(),
+                resolve_board_date(int(day_raw), int(month_raw), observed_at).isoformat(),
+            )
+        )
+
+    for month_match in re.finditer(
+        r"\b(\d{1,2})\s+(янв|фев|мар|апр|май|мая|июн|июл|авг|сен|сент|окт|ноя|дек)\w*\b",
+        value,
+        flags=re.IGNORECASE,
+    ):
+        day_raw, month_raw = month_match.groups()
+        month = RUSSIAN_MONTHS.get(month_raw.lower()[:4]) or RUSSIAN_MONTHS.get(month_raw.lower()[:3])
+        if month is not None:
+            candidates.append(
+                (
+                    month_match.start(),
+                    resolve_board_date(int(day_raw), month, observed_at).isoformat(),
+                )
+            )
+
+    if candidates:
+        return max(candidates, key=lambda item: item[0])[1]
+
+    return ""
 
 
 def normalize_status(status_raw: str, scheduled_date: str, scheduled_time: str, observed_at: datetime) -> str:
@@ -417,6 +486,14 @@ def build_dataset_rows(
         actual_date, actual_time = parse_board_datetime(flight.actual_raw, observed_at)
         status = normalize_status(flight.status_raw, flight_date, flight_time, observed_at)
         reason, reason_class = extract_reason(flight.status_raw)
+        status_reference_date = parse_board_text_date(flight.status_raw, observed_at)
+        if (
+            status in {"combined", "delayed"}
+            and status_reference_date
+            and status_reference_date != flight_date
+            and (not actual_date or not has_explicit_board_date(flight.actual_raw))
+        ):
+            actual_date = status_reference_date
 
         rows.append(
             DatasetRow(

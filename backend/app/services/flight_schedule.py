@@ -112,6 +112,27 @@ def _latest_row_per_flight(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return list(latest_by_key.values())
 
 
+def _carryover_next_day_rows(rows: list[dict[str, str]], target_date: date) -> list[dict[str, str]]:
+    latest_observation_rows = _latest_rows(rows)
+    latest_flight_rows = _latest_row_per_flight(latest_observation_rows or rows)
+
+    result: list[dict[str, str]] = []
+    for row in latest_flight_rows or latest_observation_rows:
+        flight_date = _parse_date(row.get("flight_date"))
+        actual_date = _parse_date(row.get("actual_date"))
+        status = _clean_text(row.get("status_normalized"))
+
+        if (
+            flight_date is not None
+            and actual_date is not None
+            and flight_date < target_date < actual_date
+            and status in NEXT_DAY_BOARD_STATUSES
+        ):
+            result.append(row)
+
+    return result
+
+
 def _join_unique(values: list[str]) -> str | None:
     result: list[str] = []
     seen: set[str] = set()
@@ -187,11 +208,14 @@ def get_flight_schedule_for_date(
 ) -> FlightScheduleSnapshot:
     settings = get_settings()
     path = board_path or Path(settings.flight_status_dataset_path)
+    all_rows = _read_rows(path)
     rows = [
         row
-        for row in _read_rows(path)
+        for row in all_rows
         if _clean_text(row.get("flight_date")) == target_date.isoformat()
     ]
+    if not rows:
+        rows = _carryover_next_day_rows(all_rows, target_date)
     if not rows:
         return _unavailable(f"No board schedule rows for {target_date.isoformat()}.", source)
 

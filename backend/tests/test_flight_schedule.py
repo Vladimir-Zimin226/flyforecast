@@ -291,6 +291,36 @@ class FlightScheduleTests(unittest.TestCase):
         self.assertEqual(schedule.total_flights, 1)
         self.assertEqual(schedule.unavailable_flights, 1)
 
+    def test_carryover_combined_flight_blocks_forecast_for_intermediate_date(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "board.csv"
+            write_rows(
+                path,
+                [
+                    {
+                        "observed_at": "2026-06-20T10:00:00+11:00",
+                        "direction": "departure",
+                        "flight_date": "2026-06-19",
+                        "flight_time": "11:20",
+                        "flight_numbers": "HZ-3036 SU-4601",
+                        "status_normalized": "combined",
+                        "actual_date": "2026-06-21",
+                        "actual_time": "09:50",
+                    }
+                ],
+            )
+
+            schedule = get_flight_schedule_for_date(date(2026, 6, 20), board_path=path)
+
+        self.assertTrue(schedule.available)
+        self.assertTrue(schedule.moved_next_day)
+        self.assertFalse(schedule.completed_same_day)
+        self.assertEqual(schedule.total_flights, 1)
+        self.assertEqual(schedule.unavailable_flights, 1)
+        self.assertEqual(schedule.pending_flights, 0)
+        self.assertEqual(schedule.active_flight_status, "combined")
+        self.assertEqual(schedule.active_flight_numbers, "HZ-3036 SU-4601")
+
     def test_completed_first_flight_moves_forecast_to_next_flight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "board.csv"
