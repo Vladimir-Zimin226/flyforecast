@@ -334,7 +334,7 @@ class FlightScheduleTests(unittest.TestCase):
         self.assertEqual(schedule.active_flight_status, "combined")
         self.assertEqual(schedule.active_flight_numbers, "HZ-3036 SU-4601")
 
-    def test_fresh_no_kunashir_board_error_blocks_today_forecast(self) -> None:
+    def test_fresh_no_kunashir_board_error_without_rows_is_unavailable_not_cancelled(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             board_path = Path(tmp) / "board.csv"
             errors_path = Path(tmp) / "errors.csv"
@@ -371,12 +371,12 @@ class FlightScheduleTests(unittest.TestCase):
                 errors_path=errors_path,
             )
 
-        self.assertTrue(schedule.available)
-        self.assertTrue(schedule.moved_next_day)
-        self.assertEqual(schedule.status_summary, "no_board_flights")
+        self.assertFalse(schedule.available)
+        self.assertFalse(schedule.moved_next_day)
+        self.assertIsNone(schedule.status_summary)
         self.assertIn("Fresh airport board has no Kunashir rows", schedule.reason or "")
 
-    def test_fresh_no_kunashir_board_error_overrides_stale_same_day_rows(self) -> None:
+    def test_fresh_no_kunashir_board_error_does_not_override_same_day_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             board_path = Path(tmp) / "board.csv"
             errors_path = Path(tmp) / "errors.csv"
@@ -414,9 +414,12 @@ class FlightScheduleTests(unittest.TestCase):
             )
 
         self.assertTrue(schedule.available)
-        self.assertTrue(schedule.moved_next_day)
-        self.assertEqual(schedule.status_summary, "no_board_flights")
-        self.assertEqual(schedule.observed_at, "2026-06-20T14:57:21+11:00")
+        self.assertFalse(schedule.moved_next_day)
+        self.assertEqual(schedule.status_summary, "delayed")
+        self.assertEqual(schedule.observed_at, "2026-06-20T13:49:02+11:00")
+        self.assertEqual(schedule.total_flights, 1)
+        self.assertEqual(schedule.pending_flights, 1)
+        self.assertEqual(schedule.active_flight_status, "delayed")
 
     def test_stale_no_kunashir_board_error_does_not_block_future_forecast(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

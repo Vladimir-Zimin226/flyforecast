@@ -158,23 +158,6 @@ def _unavailable(reason: str, source: str) -> FlightScheduleSnapshot:
     return FlightScheduleSnapshot(source=source, available=False, reason=reason)
 
 
-def _no_board_flights(reason: str, source: str, observed_at: datetime) -> FlightScheduleSnapshot:
-    return FlightScheduleSnapshot(
-        source=source,
-        available=True,
-        reason=reason,
-        observed_at=observed_at.isoformat(),
-        moved_next_day=True,
-        completed_same_day=False,
-        status_summary="no_board_flights",
-        total_flights=0,
-        completed_flights=0,
-        unavailable_flights=0,
-        pending_flights=0,
-        active_flight_status="no_board_flights",
-    )
-
-
 def _latest_no_kunashir_error(errors_path: Path) -> datetime | None:
     rows = [
         row
@@ -272,13 +255,6 @@ def get_flight_schedule_for_date(
     path = board_path or Path(settings.flight_status_dataset_path)
     errors = errors_path or Path(settings.flight_status_errors_path)
     all_rows = _read_rows(path)
-    latest_no_kunashir_error = _fresh_no_kunashir_error_after_rows(all_rows, errors, target_date)
-    if latest_no_kunashir_error is not None:
-        return _no_board_flights(
-            f"Fresh airport board has no Kunashir rows for {target_date.isoformat()}.",
-            source,
-            latest_no_kunashir_error,
-        )
 
     rows = [
         row
@@ -288,6 +264,12 @@ def get_flight_schedule_for_date(
     if not rows:
         rows = _carryover_next_day_rows(all_rows, target_date)
     if not rows:
+        latest_no_kunashir_error = _fresh_no_kunashir_error_after_rows(all_rows, errors, target_date)
+        if latest_no_kunashir_error is not None:
+            return _unavailable(
+                f"Fresh airport board has no Kunashir rows for {target_date.isoformat()}.",
+                source,
+            )
         return _unavailable(f"No board schedule rows for {target_date.isoformat()}.", source)
 
     latest_observation_rows = _latest_rows(rows)
