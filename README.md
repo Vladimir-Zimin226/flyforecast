@@ -19,14 +19,14 @@
 
 Текущий пользовательский сценарий:
 
-1. пользователь заходит на `flyforecast.ru`;
-2. видит уведомление о необходимых cookies/localStorage и отдельное согласие на аналитику Яндекс Метрики;
-3. выбирает дату от сегодня до +365 дней и получает прогноз;
-4. без регистрации может сделать до 5 бесплатных прогнозов;
-5. после 5-го прогноза сервис предлагает создать личный кабинет для дальнейшей бесплатной работы;
-6. при регистрации пользователь указывает имя, email и пароль, а также даёт согласие на обработку персональных данных;
-7. в личном кабинете пользователь видит статистику своих прогнозов и может оставить обратную связь;
-8. администратор входит через обычную форму входа и видит пользователей, их прогнозы, согласия и отзывы в закрытой админской зоне.
+1. Пользователь заходит на `flyforecast.ru`;
+2. Видит уведомление о необходимых cookies/localStorage и отдельное согласие на аналитику Яндекс Метрики;
+3. Выбирает дату от сегодня до +365 дней и получает прогноз;
+4. Без регистрации может сделать до 5 бесплатных прогнозов;
+5. После 5-го прогноза сервис предлагает создать личный кабинет для дальнейшей бесплатной работы;
+6. При регистрации пользователь указывает имя, email и пароль, а также даёт согласие на обработку персональных данных;
+7. В личном кабинете пользователь видит статистику своих прогнозов и может оставить обратную связь;
+8. Администратор входит через обычную форму входа и видит пользователей, их прогнозы, согласия и отзывы в закрытой админской зоне.
 
 ---
 
@@ -57,6 +57,98 @@
 - рабочий v3 dataset с ручной проверкой и board evidence.
 
 Внешняя LLM не используется: объяснение собирается кодом из уже рассчитанных факторов.
+
+---
+
+## Соответствие требованиям к MVP из курса «Практическая ML-инженерия»
+
+| Требование | Как реализовано в проекте |
+| --- | --- |
+| Спроектировать доменную модель сервиса | Доменная модель описана ниже: пользователь, прогноз, погодный снимок, расписание/табло, исторический снимок, согласия, обратная связь и сервисные результаты мониторинга. |
+| Обеспечить хранение данных за счет СУБД | Postgres хранит пользователей, хеши паролей, согласия, события прогнозов и обратную связь. Сервисные данные мониторинга и погодного кэша в MVP вынесены в локальные SQLite/CSV-файлы в `data/`. |
+| Реализовать REST интерфейс | FastAPI backend: `/health`, `/predict`, `/auth/register`, `/auth/login`, `/me`, `/feedback`, `/consents`, `/admin/users`, `/admin/services`, `/admin/backup`. |
+| Реализовать пользовательский интерфейс | React/Vite frontend: экран прогноза, регистрация, вход, личный кабинет, форма обратной связи, cookie/analytics consent, закрытая админка. |
+| Покрыть тестами критические части | Unit-тесты в `backend/tests/`: predictor baseline, flight schedule, explanations, auth, weather fallback/circuit breaker, forecast monitor outcomes, admin backup. |
+| Упаковать сервис в Docker контейнер | `backend/Dockerfile`, `frontend/Dockerfile`, `frontend/Dockerfile.prod`, `docker-compose.yml`, `docker-compose.prod.yml`. |
+| Обеспечить возможность масштабировать количество воркеров с моделью | Backend/model workers масштабируются через `WEB_CONCURRENCY`; фоновые процессы `collector` и `forecast_monitor` вынесены в отдельные Docker-сервисы. |
+
+## Доменная модель сервиса
+
+Основная доменная идея: пользователь выбирает дату рейса, сервис собирает доступные факторы по погоде, истории и табло аэропорта, рассчитывает вероятность выполнения рейса и сохраняет пользовательское событие прогноза.
+
+```mermaid
+erDiagram
+    USER ||--o{ CONSENT : gives
+    USER ||--o{ PREDICTION_EVENT : requests
+    USER ||--o{ FEEDBACK : writes
+
+    PREDICTION_EVENT }o--|| FORECAST_RESULT : returns
+    FORECAST_RESULT }o--|| WEATHER_SNAPSHOT : uses
+    FORECAST_RESULT }o--|| FLIGHT_SCHEDULE_SNAPSHOT : uses
+    FORECAST_RESULT }o--|| HISTORICAL_SNAPSHOT : uses
+
+    FORECAST_MONITOR_RUN ||--o{ FORECAST_MONITOR_PREDICTION : creates
+    FORECAST_MONITOR_PREDICTION }o--o| BOARD_OUTCOME : evaluated_by
+
+    USER {
+        string email
+        string password_hash
+        int prediction_count
+        datetime created_at
+    }
+    CONSENT {
+        string event
+        bool personal_data_consent
+        bool analytics_consent
+        datetime created_at
+    }
+    PREDICTION_EVENT {
+        string target_date
+        float probability_flight
+        string decision
+        string model_version
+        datetime created_at
+    }
+    FORECAST_RESULT {
+        string date
+        string decision
+        float probability_flight
+        string confidence
+        string forecast_mode
+    }
+    WEATHER_SNAPSHOT {
+        string source
+        bool available
+        float visibility
+        float wind_gusts_10m
+        string fog_low_cloud_risk_level
+    }
+    FLIGHT_SCHEDULE_SNAPSHOT {
+        string source
+        bool available
+        bool moved_next_day
+        bool completed_same_day
+        string status_summary
+    }
+    HISTORICAL_SNAPSHOT {
+        int similar_days_count
+        int completed_count
+        int cancelled_count
+        float historical_probability_flight
+    }
+```
+
+Ключевые сущности:
+
+- `User` — зарегистрированный пользователь сервиса.
+- `Consent` — события согласий на обработку персональных данных и аналитику.
+- `PredictionEvent` — факт пользовательского запроса прогноза.
+- `ForecastResult` — рассчитанный ответ: вероятность, решение, режим прогноза и уверенность.
+- `WeatherSnapshot` — погодные признаки для даты и аэропорта.
+- `FlightScheduleSnapshot` — состояние табло аэропорта: рейс запланирован, задержан, перенесён, выполнен или отсутствует в свежем табло.
+- `HistoricalSnapshot` — историческая статистика по календарно близким датам.
+- `Feedback` — обратная связь пользователя.
+- `ForecastMonitorPrediction` и `BoardOutcome` — служебные сущности для проверки качества прогнозов по фактическому исходу.
 
 ---
 
@@ -239,6 +331,7 @@ cp .env.example .env
 ```env
 APP_ENV=development
 BACKEND_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+WEB_CONCURRENCY=1
 
 JWT_SECRET=change-me
 ADMIN_EMAIL=admin@example.com
@@ -294,6 +387,24 @@ Backend:  http://localhost:8000
 Postgres: localhost:5432
 Health:   http://localhost:8000/health
 ```
+
+### 5. Масштабировать backend/model workers
+
+В MVP прогнозная логика выполняется внутри backend-процесса, а сбор табло и мониторинг вынесены в отдельные сервисы `collector` и `forecast_monitor`.
+
+Количество backend/model workers задаётся переменной:
+
+```env
+WEB_CONCURRENCY=2
+```
+
+После изменения `.env` пересобрать backend:
+
+```bash
+docker compose up -d --build backend
+```
+
+Для текущего MVP этого достаточно: пользовательский API остаётся быстрым, а тяжёлые и периодические задачи вынесены в фоновые Docker-сервисы. При дальнейшем росте проекта и добавлении аэропортов Сахалина расчётные workers можно масштабировать по аэропортам/маршрутам, а результаты сохранять в кэш прогнозов.
 
 ---
 
@@ -487,30 +598,3 @@ python pipelines/training/build_mendeleyevo_fog_risk_dataset.py
 - Яндекс Метрика должна подключаться только после отдельного согласия пользователя;
 - трансграничная передача персональных данных для текущей инфраструктуры не осуществляется и не планируется;
 - отзывы пользователей могут использоваться для продвижения сервиса в порядке, указанном в политике.
-
----
-
-## Ближайшие задачи
-
-1. Проверить `training_dataset_v1.csv` и `mendeleyevo_fog_risk_dataset.csv` на корреляции, leakage и качество признаков.
-2. Добавить time-based train/validation/test split.
-3. Сравнить seasonal baseline, fog-risk baseline и Logistic Regression.
-4. Считать Brier Score и calibration curve.
-5. Улучшить backend confidence/threshold rules после первых метрик forecast monitor.
-6. Добавить tests для `/health`, `/auth/register`, `/auth/login`, `/me`, `/predict`.
-7. Развить продуктовую аналитику по зарегистрированным пользователям: retention, повторные прогнозы, конверсия после 5 бесплатных прогнозов, ценность отзывов.
-8. Улучшить frontend: сравнение соседних дат, сохранение дат, прозрачные ограничения.
-
----
-
-## Главная мысль
-
-Мы не пытаемся идеально предсказать погоду или решение авиакомпании.
-
-Мы делаем честный вероятностный сервис, который помогает людям получить более полезный ориентир, чем «ничего неизвестно»:
-
-- какие даты выглядят лучше;
-- какие окна исторически хуже;
-- когда риск выше;
-- когда риск ниже;
-- насколько можно доверять оценке на выбранном горизонте.
