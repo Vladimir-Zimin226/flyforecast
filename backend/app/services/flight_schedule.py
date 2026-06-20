@@ -184,6 +184,31 @@ def _latest_no_kunashir_error(errors_path: Path) -> datetime | None:
     return _latest_observed_at(rows)
 
 
+def _latest_board_observed_at_for_target(rows: list[dict[str, str]], target_date: date) -> datetime | None:
+    target_rows = [
+        row
+        for row in rows
+        if _clean_text(row.get("flight_date")) == target_date.isoformat()
+    ]
+    return _latest_observed_at(target_rows)
+
+
+def _fresh_no_kunashir_error_after_rows(
+    rows: list[dict[str, str]],
+    errors_path: Path,
+    target_date: date,
+) -> datetime | None:
+    latest_no_kunashir_error = _latest_no_kunashir_error(errors_path)
+    if latest_no_kunashir_error is None or latest_no_kunashir_error.date() < target_date:
+        return None
+
+    latest_target_row = _latest_board_observed_at_for_target(rows, target_date)
+    if latest_target_row is None or latest_no_kunashir_error > latest_target_row:
+        return latest_no_kunashir_error
+
+    return None
+
+
 def _flight_state(row: dict[str, str], target_date: date) -> str:
     status = _clean_text(row.get("status_normalized"))
     actual_date = _parse_date(row.get("actual_date"))
@@ -247,6 +272,14 @@ def get_flight_schedule_for_date(
     path = board_path or Path(settings.flight_status_dataset_path)
     errors = errors_path or Path(settings.flight_status_errors_path)
     all_rows = _read_rows(path)
+    latest_no_kunashir_error = _fresh_no_kunashir_error_after_rows(all_rows, errors, target_date)
+    if latest_no_kunashir_error is not None:
+        return _no_board_flights(
+            f"Fresh airport board has no Kunashir rows for {target_date.isoformat()}.",
+            source,
+            latest_no_kunashir_error,
+        )
+
     rows = [
         row
         for row in all_rows
@@ -255,13 +288,6 @@ def get_flight_schedule_for_date(
     if not rows:
         rows = _carryover_next_day_rows(all_rows, target_date)
     if not rows:
-        latest_no_kunashir_error = _latest_no_kunashir_error(errors)
-        if latest_no_kunashir_error is not None and latest_no_kunashir_error.date() >= target_date:
-            return _no_board_flights(
-                f"Fresh airport board has no Kunashir rows for {target_date.isoformat()}.",
-                source,
-                latest_no_kunashir_error,
-            )
         return _unavailable(f"No board schedule rows for {target_date.isoformat()}.", source)
 
     latest_observation_rows = _latest_rows(rows)

@@ -376,6 +376,48 @@ class FlightScheduleTests(unittest.TestCase):
         self.assertEqual(schedule.status_summary, "no_board_flights")
         self.assertIn("Fresh airport board has no Kunashir rows", schedule.reason or "")
 
+    def test_fresh_no_kunashir_board_error_overrides_stale_same_day_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            board_path = Path(tmp) / "board.csv"
+            errors_path = Path(tmp) / "errors.csv"
+            write_rows(
+                board_path,
+                [
+                    {
+                        "observed_at": "2026-06-20T13:49:02+11:00",
+                        "direction": "departure",
+                        "flight_date": "2026-06-20",
+                        "flight_time": "14:50",
+                        "flight_numbers": "HZ-3034 SU-4666",
+                        "status_normalized": "delayed",
+                        "actual_date": "2026-06-20",
+                        "actual_time": "15:30",
+                    }
+                ],
+            )
+            write_error_rows(
+                errors_path,
+                [
+                    {
+                        "observed_at": "2026-06-20T14:57:21+11:00",
+                        "source": "airportus",
+                        "source_url": "https://airportus.ru/board/",
+                        "error": "No Kunashir rows found in parsed board HTML.",
+                    }
+                ],
+            )
+
+            schedule = get_flight_schedule_for_date(
+                date(2026, 6, 20),
+                board_path=board_path,
+                errors_path=errors_path,
+            )
+
+        self.assertTrue(schedule.available)
+        self.assertTrue(schedule.moved_next_day)
+        self.assertEqual(schedule.status_summary, "no_board_flights")
+        self.assertEqual(schedule.observed_at, "2026-06-20T14:57:21+11:00")
+
     def test_stale_no_kunashir_board_error_does_not_block_future_forecast(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             board_path = Path(tmp) / "board.csv"

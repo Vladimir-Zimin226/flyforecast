@@ -213,6 +213,11 @@ def _schedule_snapshot_from_prediction(row: sqlite3.Row) -> FlightScheduleSnapsh
     if "schedule_available" not in keys:
         return None
 
+    def int_value(column: str, default: int = 0) -> int:
+        if column not in keys or row[column] is None:
+            return default
+        return int(row[column])
+
     return FlightScheduleSnapshot(
         source=row["schedule_source"] or "forecast-monitor",
         available=bool(row["schedule_available"]),
@@ -225,10 +230,10 @@ def _schedule_snapshot_from_prediction(row: sqlite3.Row) -> FlightScheduleSnapsh
         moved_next_day=bool(row["schedule_moved_next_day"]),
         completed_same_day=bool(row["schedule_completed_same_day"]),
         status_summary=row["schedule_status_summary"],
-        total_flights=row["schedule_total_flights"] if "schedule_total_flights" in keys else 0,
-        completed_flights=row["schedule_completed_flights"] if "schedule_completed_flights" in keys else 0,
-        unavailable_flights=row["schedule_unavailable_flights"] if "schedule_unavailable_flights" in keys else 0,
-        pending_flights=row["schedule_pending_flights"] if "schedule_pending_flights" in keys else 0,
+        total_flights=int_value("schedule_total_flights"),
+        completed_flights=int_value("schedule_completed_flights"),
+        unavailable_flights=int_value("schedule_unavailable_flights"),
+        pending_flights=int_value("schedule_pending_flights"),
         active_flight_index=row["schedule_active_flight_index"] if "schedule_active_flight_index" in keys else None,
         active_flight_hour=row["schedule_active_flight_hour"] if "schedule_active_flight_hour" in keys else None,
         active_flight_time=row["schedule_active_flight_time"] if "schedule_active_flight_time" in keys else None,
