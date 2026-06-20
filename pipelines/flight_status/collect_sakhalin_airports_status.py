@@ -61,6 +61,7 @@ class TargetAirport:
     latitude: float
     longitude: float
     route_aliases: tuple[str, ...]
+    route_exclude_aliases: tuple[str, ...] = ()
 
 
 TARGET_AIRPORTS = [
@@ -123,6 +124,7 @@ TARGET_AIRPORTS = [
         latitude=45.25639,
         longitude=147.95583,
         route_aliases=("Курильск", "Итуруп", "Ясный"),
+        route_exclude_aliases=("Южно-Курильск",),
     ),
 ]
 
@@ -202,6 +204,8 @@ def parse_board_html_all(html: str, source: str, source_url: str) -> list[BoardF
 
 def route_matches_airport(route: str, airport: TargetAirport) -> bool:
     route_lower = clean_text(route).lower()
+    if any(alias.lower() in route_lower for alias in airport.route_exclude_aliases):
+        return False
     return any(alias.lower() in route_lower for alias in airport.route_aliases)
 
 
