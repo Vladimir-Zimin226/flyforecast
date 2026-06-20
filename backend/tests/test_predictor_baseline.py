@@ -1,7 +1,7 @@
 import unittest
 
 from app.config import Settings
-from app.schemas import FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
+from app.schemas import FlightScheduleFlight, FlightScheduleSnapshot, HistoricalSnapshot, WeatherSnapshot
 from app.services.predictor import calculate_probability, has_compound_humidity_risk, make_decision
 from app.services.weather import _is_flight_opportunity_hour
 
@@ -219,6 +219,75 @@ class PredictorBaselineTests(unittest.TestCase):
 
         self.assertLess(probability, 0.58)
         self.assertEqual(make_decision(probability, horizon_days=0), "no")
+
+    def test_same_day_operational_stress_reduces_probability_without_board_final_status(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=True,
+            flight_window_start_hour=12,
+            flight_window_end_hour=20,
+            flight_window_hours=9,
+            visibility=9000,
+            flight_window_visibility=9000,
+            cloud_cover=100,
+            cloud_cover_low=100,
+            wind_gusts_10m=38,
+            weather_code=3,
+            fog_low_cloud_risk_level="low",
+            hourly_rows=[
+                {"hour": 8, "visibility": 180, "cloud_cover": 100, "cloud_cover_low": 100, "weather_code": 3},
+                {"hour": 9, "visibility": 700, "cloud_cover": 100, "cloud_cover_low": 100, "weather_code": 3},
+                {"hour": 12, "visibility": 9000, "cloud_cover": 100, "cloud_cover_low": 100, "weather_code": 3},
+                {"hour": 13, "visibility": 12000, "cloud_cover": 100, "cloud_cover_low": 100, "weather_code": 3},
+            ],
+        )
+        schedule = FlightScheduleSnapshot(
+            source="test-board",
+            available=True,
+            first_departure_hour=14,
+            first_scheduled_hour=14,
+            last_scheduled_hour=18,
+            moved_next_day=False,
+            completed_same_day=False,
+            status_summary="delayed;scheduled",
+            total_flights=2,
+            pending_flights=2,
+            flights=[
+                FlightScheduleFlight(status="delayed", state="pending", hour=14),
+                FlightScheduleFlight(status="scheduled", state="pending", hour=18),
+            ],
+        )
+
+        stressed_probability = calculate_probability(
+            horizon_days=0,
+            weather=weather,
+            history=seasonal_late_may_history(),
+            schedule=schedule,
+        )
+        unstressed_probability = calculate_probability(
+            horizon_days=0,
+            weather=weather,
+            history=seasonal_late_may_history(),
+            schedule=FlightScheduleSnapshot(
+                source="test-board",
+                available=True,
+                first_departure_hour=14,
+                first_scheduled_hour=14,
+                last_scheduled_hour=18,
+                status_summary="scheduled",
+                total_flights=2,
+                pending_flights=2,
+                flights=[
+                    FlightScheduleFlight(status="scheduled", state="pending", hour=14),
+                    FlightScheduleFlight(status="scheduled", state="pending", hour=18),
+                ],
+            ),
+        )
+
+        self.assertLess(stressed_probability, unstressed_probability)
+        self.assertLess(stressed_probability, 0.58)
+        self.assertEqual(make_decision(stressed_probability, horizon_days=0), "no")
 
     def test_extreme_gust_removes_flight_window(self) -> None:
         settings = Settings()

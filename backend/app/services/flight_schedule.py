@@ -335,7 +335,7 @@ def get_flight_schedule_for_date(
             active_flight = flight
             break
 
-    for row in schedule_rows:
+    for row in deduplicated_rows:
         status = _clean_text(row.get("status_normalized"))
         if status:
             statuses.append(status)

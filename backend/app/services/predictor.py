@@ -99,6 +99,124 @@ def has_good_late_clearing_support(weather: WeatherSnapshot, late_schedule_windo
     )
 
 
+def _weather_row_value(row: dict[str, float | int | None], field: str) -> float | int | None:
+    return row.get(field)
+
+
+def has_bad_early_weather(weather: WeatherSnapshot) -> bool:
+    if not weather.available:
+        return False
+
+    rows = [
+        row
+        for row in (weather.hourly_rows or [])
+        if row.get("hour") is not None and 8 <= int(row["hour"]) <= 11
+    ]
+    if not rows:
+        visibility = weather.visibility
+        return bool(
+            visibility is not None
+            and visibility <= 3000
+            and (
+                (weather.cloud_cover_low is not None and weather.cloud_cover_low >= 90)
+                or (weather.cloud_cover is not None and weather.cloud_cover >= 95)
+                or weather.fog_low_cloud_risk_level in {"medium", "high"}
+            )
+        )
+
+    for row in rows:
+        visibility = _weather_row_value(row, "visibility")
+        cloud_cover = _weather_row_value(row, "cloud_cover")
+        cloud_cover_low = _weather_row_value(row, "cloud_cover_low")
+        weather_code = _weather_row_value(row, "weather_code")
+        has_fog_code = weather_code is not None and int(weather_code) in {45, 48}
+
+        if visibility is not None and visibility <= 1000:
+            return True
+        if (
+            visibility is not None
+            and visibility <= 3000
+            and (
+                (cloud_cover_low is not None and cloud_cover_low >= 90)
+                or (cloud_cover is not None and cloud_cover >= 95)
+                or has_fog_code
+            )
+        ):
+            return True
+
+    return False
+
+
+def schedule_has_operational_disruption(schedule: FlightScheduleSnapshot | None) -> bool:
+    if schedule is None or not schedule.available:
+        return False
+
+    statuses = {
+        status.strip().lower()
+        for status in (schedule.status_summary or "").split(";")
+        if status.strip()
+    }
+    statuses.update(
+        (flight.status or "").strip().lower()
+        for flight in schedule.flights
+        if (flight.status or "").strip()
+    )
+    return bool(statuses & {"delayed", "combined", "cancelled"})
+
+
+def has_compressed_operational_window(
+    weather: WeatherSnapshot,
+    schedule: FlightScheduleSnapshot | None,
+) -> bool:
+    if schedule is None or not schedule.available:
+        return False
+
+    late_schedule = (
+        (schedule.first_departure_hour is not None and schedule.first_departure_hour >= 13)
+        or (schedule.last_scheduled_hour is not None and schedule.last_scheduled_hour >= 17)
+    )
+    late_weather_window = (
+        weather.flight_window_available
+        and weather.flight_window_start_hour is not None
+        and weather.flight_window_start_hour >= 12
+    )
+    many_pending = schedule.pending_flights >= 2
+    return bool(late_schedule or late_weather_window or many_pending)
+
+
+def calculate_operational_stress_adjustment(
+    weather: WeatherSnapshot,
+    schedule: FlightScheduleSnapshot | None = None,
+) -> float:
+    if (
+        schedule is None
+        or not schedule.available
+        or schedule.moved_next_day
+        or schedule.completed_same_day
+        or not schedule_has_operational_disruption(schedule)
+    ):
+        return 0.0
+
+    penalty = 0.04
+
+    if has_bad_early_weather(weather):
+        penalty += 0.08
+
+    if has_compressed_operational_window(weather, schedule):
+        penalty += 0.04
+
+    if (
+        weather.available
+        and weather.cloud_cover is not None
+        and weather.cloud_cover >= 95
+        and weather.wind_gusts_10m is not None
+        and weather.wind_gusts_10m >= 35
+    ):
+        penalty += 0.02
+
+    return -min(penalty, 0.18)
+
+
 def calculate_weather_adjustment(
     weather: WeatherSnapshot,
     schedule: FlightScheduleSnapshot | None = None,
@@ -254,6 +372,8 @@ def calculate_probability(
     # Погодную поправку используем только там, где forecast реально есть.
     if horizon_days <= 15:
         base += calculate_weather_adjustment(weather, schedule=schedule)
+    if horizon_days <= 1:
+        base += calculate_operational_stress_adjustment(weather, schedule=schedule)
 
     base = apply_schedule_guardrails(base, schedule)
     lower_bound = 0.0 if schedule is not None and schedule.available and schedule.moved_next_day else 0.05
