@@ -86,6 +86,34 @@ class CollectKunashirStatusTests(unittest.TestCase):
         self.assertEqual(rows[1].direction, "arrival")
         self.assertEqual(rows[1].flight_numbers, "HZ-3037 SU-4602")
 
+    def test_text_block_fallback_parser_extracts_collapsed_board_rows(self) -> None:
+        html = """
+        <html><body>
+        <div>Рейс Авиакомпания Город Время по расписанию Время фактическое Cтатус</div>
+        <div>HZ-3036 SU-4601 Южно-Курильск По расписанию  19.06 11:20 09:50 Совмещён с HZ 3034 21 Июн Регистрация: 00:00 - 00:00</div>
+        <div>HZ-3034 SU-4666 Южно-Курильск По расписанию  20.06 14:50 09:50 Задержан до 09:50 Регистрация: 00:00 - 00:00</div>
+        <div>HZ-3032 SU-4544 Южно-Курильск По расписанию  10:20 10:20 Регистрация: 00:00 - 00:00</div>
+        <div>HZ-3036 SU-4601 Южно-Курильск По расписанию  11:30 13:35 Задержан до 13:35 Регистрация: 00:00 - 00:00</div>
+        <div>Рейс Авиакомпания Город Время по расписанию Время фактическое Cтатус</div>
+        <div>HZ-3033 SU-4545 Южно-Курильск По расписанию  13:45 13:45</div>
+        <div>HZ-3037 SU-4602 Южно-Курильск По расписанию  14:55 16:50 Задержан до 16:50</div>
+        </body></html>
+        """
+
+        rows = parse_board_html(html, source="airportus", source_url="https://airportus.ru/board/")
+
+        self.assertEqual(len(rows), 6)
+        self.assertEqual(rows[0].direction, "departure")
+        self.assertEqual(rows[0].flight_numbers, "HZ-3036 SU-4601")
+        self.assertEqual(rows[0].route, "Южно-Курильск")
+        self.assertEqual(rows[0].scheduled_raw, "По расписанию 19.06 11:20")
+        self.assertEqual(rows[0].actual_raw, "09:50")
+        self.assertEqual(rows[0].status_raw, "Совмещён с HZ 3034 21 Июн")
+        self.assertEqual(rows[3].status_raw, "Задержан до 13:35")
+        self.assertEqual(rows[4].direction, "arrival")
+        self.assertEqual(rows[4].flight_numbers, "HZ-3033 SU-4545")
+        self.assertEqual(rows[5].status_raw, "Задержан до 16:50")
+
 
 if __name__ == "__main__":
     unittest.main()

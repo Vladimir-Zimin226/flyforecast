@@ -19,6 +19,7 @@ from collect_kunashir_status import (
     clean_text,
     extract_reason,
     fetch_text,
+    merge_board_rows,
     normalize_status,
     parse_board_datetime,
     parse_board_text_fallback,
@@ -197,9 +198,10 @@ class WeatherHourlyRow:
 def parse_board_html_all(html: str, source: str, source_url: str) -> list[BoardFlight]:
     parser = AirportBoardParser(source=source, source_url=source_url)
     parser.feed(html)
-    if parser.rows:
-        return parser.rows
-    return parse_board_text_fallback(html, source=source, source_url=source_url)
+    return merge_board_rows(
+        parser.rows,
+        parse_board_text_fallback(html, source=source, source_url=source_url),
+    )
 
 
 def route_matches_airport(route: str, airport: TargetAirport) -> bool:

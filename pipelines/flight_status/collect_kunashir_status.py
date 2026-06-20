@@ -23,6 +23,14 @@ KUNASHIR_CITY = "Южно-Курильск"
 DEFAULT_AIRPORT_LATITUDE = float(os.getenv("AIRPORT_LATITUDE", "43.958"))
 DEFAULT_AIRPORT_LONGITUDE = float(os.getenv("AIRPORT_LONGITUDE", "145.683"))
 FLIGHT_NUMBERS_PATTERN = re.compile(r"^[A-ZА-Я0-9]{1,4}-\d{3,4}(?:\s+[A-ZА-Я0-9]{1,4}-\d{3,4})*$")
+FLIGHT_NUMBERS_SEARCH_PATTERN = re.compile(
+    r"\b[A-ZА-Я0-9]{1,4}-\d{3,4}(?:\s+[A-ZА-Я0-9]{1,4}-\d{3,4})*\b"
+)
+SCHEDULED_TEXT_PATTERN = re.compile(
+    r"по\s+расписанию\s+(?:(?:\d{1,2}\.\d{1,2})\s+)?\d{1,2}:\d{2}",
+    flags=re.IGNORECASE,
+)
+TIME_OR_DATE_PATTERN = re.compile(r"(?:(?:\d{1,2}\.\d{1,2})\s+)?\d{1,2}:\d{2}")
 RUSSIAN_MONTHS = {
     "янв": 1,
     "фев": 2,
@@ -316,6 +324,109 @@ def _looks_like_status(value: str) -> bool:
     )
 
 
+def _direction_for_text_position(text: str, start_index: int) -> str:
+    header_count = len(re.findall(r"(?<!\w)рейс(?!\w)", text[:start_index], flags=re.IGNORECASE))
+    return "arrival" if header_count >= 2 else "departure"
+
+
+def _clean_route_from_text_block(value: str) -> str:
+    route = re.split(r"\bрегистрация\s*:", value, maxsplit=1, flags=re.IGNORECASE)[0]
+    route = clean_text(route)
+    route = re.sub(
+        r"^(?:рейс|авиакомпания|город|время|по расписанию|фактическое|cтатус|статус|image)\s+",
+        "",
+        route,
+        flags=re.IGNORECASE,
+    )
+    route = re.sub(r"\s+(?:рейс|авиакомпания|город|время|по расписанию|фактическое|cтатус|статус)$", "", route, flags=re.IGNORECASE)
+    route = re.sub(r"^(?:image\s+)+", "", route, flags=re.IGNORECASE)
+    return clean_text(route)
+
+
+def parse_board_text_block_fallback(html: str, source: str, source_url: str) -> list[BoardFlight]:
+    parser = BoardTextParser()
+    parser.feed(html)
+    text = "\n".join(token for token in parser.tokens if token)
+    flight_matches = list(FLIGHT_NUMBERS_SEARCH_PATTERN.finditer(text))
+
+    rows: list[BoardFlight] = []
+    for index, match in enumerate(flight_matches):
+        next_start = flight_matches[index + 1].start() if index + 1 < len(flight_matches) else len(text)
+        block = text[match.end():next_start]
+        scheduled_match = SCHEDULED_TEXT_PATTERN.search(block)
+        if not scheduled_match:
+            continue
+
+        route = _clean_route_from_text_block(block[: scheduled_match.start()])
+        if not route:
+            continue
+
+        scheduled_raw = clean_text(scheduled_match.group())
+        after_schedule = block[scheduled_match.end():]
+        before_registration = re.split(
+            r"\bрегистрация\s*:",
+            after_schedule,
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+
+        actual_raw = ""
+        status_raw = ""
+        actual_match = TIME_OR_DATE_PATTERN.search(before_registration)
+        if actual_match:
+            actual_raw = clean_text(actual_match.group())
+            status_candidate = before_registration[actual_match.end():]
+        else:
+            status_candidate = before_registration
+
+        status_candidate = clean_text(status_candidate)
+        if _looks_like_status(status_candidate):
+            status_raw = status_candidate
+
+        rows.append(
+            BoardFlight(
+                source=source,
+                source_url=source_url,
+                direction=_direction_for_text_position(text, match.start()),
+                flight_numbers=clean_text(match.group()),
+                route=route,
+                scheduled_raw=scheduled_raw,
+                actual_raw=actual_raw,
+                status_raw=status_raw,
+                radar_flight_number="",
+                raw_row_text=clean_text(
+                    " | ".join(
+                        value
+                        for value in (match.group(), route, scheduled_raw, actual_raw, status_raw)
+                        if clean_text(value)
+                    )
+                ),
+            )
+        )
+
+    return rows
+
+
+def merge_board_rows(*groups: list[BoardFlight]) -> list[BoardFlight]:
+    rows: list[BoardFlight] = []
+    seen: set[tuple[str, str, str, str, str, str]] = set()
+    for group in groups:
+        for row in group:
+            key = (
+                row.direction,
+                row.flight_numbers,
+                row.route,
+                row.scheduled_raw,
+                row.actual_raw,
+                row.status_raw,
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append(row)
+    return rows
+
+
 def parse_board_text_fallback(html: str, source: str, source_url: str) -> list[BoardFlight]:
     parser = BoardTextParser()
     parser.feed(html)
@@ -388,7 +499,8 @@ def parse_board_text_fallback(html: str, source: str, source_url: str) -> list[B
         )
         index = max(cursor, index + 1)
 
-    return rows
+    block_rows = parse_board_text_block_fallback(html, source=source, source_url=source_url)
+    return merge_board_rows(rows, block_rows)
 
 
 async def fetch_text(client: httpx.AsyncClient, url: str) -> str:
