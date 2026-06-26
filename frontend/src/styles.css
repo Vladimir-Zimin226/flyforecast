@@ -1025,6 +1025,58 @@ button:disabled {
   line-height: 1.6;
 }
 
+.media-list,
+.faq-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.media-link {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--color-headline);
+  text-decoration: none;
+  box-shadow: none;
+}
+
+.media-link:hover {
+  border-color: var(--color-button);
+}
+
+.media-link span {
+  color: var(--color-tertiary);
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.media-link strong {
+  line-height: 1.35;
+}
+
+.faq-item {
+  padding: 16px;
+  border: 2px solid var(--color-stroke);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.faq-item summary {
+  cursor: pointer;
+  color: var(--color-headline);
+  font-weight: 900;
+}
+
+.faq-item p {
+  margin: 12px 0 0;
+  line-height: 1.58;
+}
+
 .policy-page {
   max-width: 900px;
 }

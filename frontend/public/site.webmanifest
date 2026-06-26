@@ -1,7 +1,7 @@
 {
   "name": "FLYFORECAST.RU",
   "short_name": "FlyForecast",
-  "description": "Прогноз вероятности вылета через аэропорт Менделеево на Кунашире.",
+  "description": "Прогноз вероятности выполнения рейса на Кунашир через аэропорт Менделеево.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f8fafc",

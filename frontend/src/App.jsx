@@ -338,6 +338,42 @@ const operatorDetails = [
   ["Уведомление в Роскомнадзор", "подано 22.05.2026, номер 100293352"]
 ];
 
+const mediaMentions = [
+  {
+    outlet: "SakhalinMedia",
+    title: "Материал о запуске FlyForecast",
+    href: "https://sakhalinmedia.ru/news/2526488/"
+  },
+  {
+    outlet: "Sakh.online",
+    title: "Сахалинец запустил ИИ-сервис прогнозирования рейсов для Кунашира",
+    href: "https://sakh.online/news/18/2026-06-15/sahalinets-zapustil-ii-servis-prognozirovaniya-reysov-dlya-kunashira-516134"
+  }
+];
+
+const forecastFaqItems = [
+  {
+    question: "Что прогнозирует FlyForecast?",
+    answer:
+      "Сервис оценивает вероятность выполнения рейса через аэропорт Менделеево на Кунашире на выбранную дату."
+  },
+  {
+    question: "Это официальный статус рейса?",
+    answer:
+      "Нет. FlyForecast дает вероятностную оценку и не заменяет официальные данные перевозчика или аэропорта."
+  },
+  {
+    question: "Это прогноз наличия билетов?",
+    answer:
+      "Нет. Сервис не проверяет места и бронирования, а оценивает риск выполнения или невыполнения рейса."
+  },
+  {
+    question: "Какие данные учитываются?",
+    answer:
+      "Для ближайших дат используются прогноз погоды, видимость, низкая облачность, ветер, влажность и данные табло. Для дальних дат сильнее влияет история вылетов и сезонность."
+  }
+];
+
 const policySections = [
   {
     title: "1. Общие положения",
@@ -2039,6 +2075,32 @@ export default function App() {
         <button type="button" className="text-button policy-link" onClick={() => setPolicyOpen(true)}>
           Политика обработки персональных данных
         </button>
+      </section>
+
+      <section className="card media-card">
+        <div className="eyebrow">Упоминания в СМИ</div>
+        <h2>О FlyForecast пишут на Сахалине</h2>
+        <div className="media-list">
+          {mediaMentions.map((item) => (
+            <a className="media-link" href={item.href} target="_blank" rel="noreferrer" key={item.href}>
+              <span>{item.outlet}</span>
+              <strong>{item.title}</strong>
+            </a>
+          ))}
+        </div>
+      </section>
+
+      <section className="card faq-card">
+        <div className="eyebrow">Коротко</div>
+        <h2>Вопросы о прогнозе</h2>
+        <div className="faq-list">
+          {forecastFaqItems.map((item) => (
+            <details className="faq-item" key={item.question}>
+              <summary>{item.question}</summary>
+              <p>{item.answer}</p>
+            </details>
+          ))}
+        </div>
       </section>
     </main>
   );
