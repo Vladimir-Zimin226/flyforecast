@@ -19,3 +19,4 @@ frontend/dist/
 backend/uvicorn.*.log
 frontend/vite.*.log
 SESSION_HANDOFF.md
+PROJECT_CONTEXT.md
