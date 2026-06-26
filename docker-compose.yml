@@ -47,7 +47,7 @@ services:
     volumes:
       - ./data:/app/data
       - ./pipelines:/app/pipelines:ro
-    command: python /app/pipelines/flight_status/collect_sakhalin_airports_status.py --loop --interval-seconds ${SAKHALIN_AIRPORTS_INTERVAL_SECONDS:-900}
+    command: python /app/pipelines/flight_status/collect_sakhalin_airports_status.py --loop --include-arrivals --interval-seconds ${SAKHALIN_AIRPORTS_INTERVAL_SECONDS:-900}
     restart: unless-stopped
 
   forecast_monitor:
