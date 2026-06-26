@@ -13,7 +13,7 @@ The main question is not just "can we scrape another airport", but:
 - whether weather snapshots cover the same periods as board facts;
 - which rules are needed before an airport can be exposed in the product.
 
-Current focus: flight frequency and weather coverage with factual departure evidence.
+Current focus: flight frequency and weather coverage with factual board evidence, especially arrival facts now that `--include-arrivals` is enabled.
 
 ## Service
 
@@ -34,6 +34,22 @@ Outputs:
 - `data/raw/sakhalin_airports/collection_errors.csv`
 
 The admin backup includes these files under `raw/sakhalin_airports/`.
+
+## Prediction Rules Draft
+
+A working draft for how new airports should become prediction-ready lives in:
+
+`data/interim/analysis/new_airports_prediction_rules_draft.md`
+
+That file is intentionally under `data/interim/analysis/`, so it is local research context and is not tracked by git.
+
+Core idea from the draft:
+
+- do not expose a new airport just because it appears in the board;
+- first require enough observed flight dates, enough arrival-based final facts, reliable weather coverage, clean alias rules, and a known flight-frequency pattern;
+- use arrival `arrived` as the strongest completion fact;
+- use departure `departed` as useful but weaker evidence until arrival confirmation exists;
+- treat `ITU` as the first likely candidate and `OHH` as the second, pending arrival-history accumulation after 2026-06-26.
 
 ## What It Collects
 
