@@ -52,6 +52,22 @@ def is_weather_window_too_late_for_schedule(
     return weather.flight_window_start_hour > latest_useful_start_hour
 
 
+def is_weather_window_before_active_flight(
+    weather: WeatherSnapshot,
+    schedule: FlightScheduleSnapshot | None,
+) -> bool:
+    if (
+        schedule is None
+        or not schedule.available
+        or schedule.active_flight_hour is None
+        or not weather.flight_window_available
+        or weather.flight_window_end_hour is None
+    ):
+        return False
+
+    return weather.flight_window_end_hour < schedule.active_flight_hour
+
+
 def wind_sector(degrees: float | None) -> str | None:
     if degrees is None:
         return None
@@ -84,8 +100,12 @@ def has_compound_humidity_risk(weather: WeatherSnapshot) -> bool:
     )
 
 
-def has_good_late_clearing_support(weather: WeatherSnapshot, late_schedule_window: bool) -> bool:
-    if not weather.flight_window_available or late_schedule_window:
+def has_good_late_clearing_support(
+    weather: WeatherSnapshot,
+    late_schedule_window: bool,
+    early_active_flight_window: bool = False,
+) -> bool:
+    if not weather.flight_window_available or late_schedule_window or early_active_flight_window:
         return False
 
     visibility = weather.flight_window_visibility if weather.flight_window_visibility is not None else weather.visibility
@@ -184,6 +204,17 @@ def has_compressed_operational_window(
     return bool(late_schedule or late_weather_window or many_pending)
 
 
+def has_marginal_active_flight_weather(weather: WeatherSnapshot) -> bool:
+    visibility = weather.flight_window_visibility if weather.flight_window_visibility is not None else weather.visibility
+    return bool(
+        weather.fog_low_cloud_risk_level in {"medium", "high"}
+        or (visibility is not None and visibility <= 8000)
+        or (weather.cloud_cover_low is not None and weather.cloud_cover_low >= 95)
+        or (weather.dew_point_spread is not None and weather.dew_point_spread <= 1)
+        or (weather.precipitation is not None and weather.precipitation >= 0.5)
+    )
+
+
 def calculate_operational_stress_adjustment(
     weather: WeatherSnapshot,
     schedule: FlightScheduleSnapshot | None = None,
@@ -204,6 +235,9 @@ def calculate_operational_stress_adjustment(
 
     if has_compressed_operational_window(weather, schedule):
         penalty += 0.04
+
+    if is_weather_window_before_active_flight(weather, schedule) and has_marginal_active_flight_weather(weather):
+        penalty += 0.10
 
     if (
         weather.available
@@ -246,12 +280,20 @@ def calculate_weather_adjustment(
     )
     late_schedule_window = is_weather_window_too_late_for_schedule(weather, schedule)
     compound_humidity_risk = has_compound_humidity_risk(weather)
-    good_late_clearing_support = has_good_late_clearing_support(weather, late_schedule_window)
+    early_active_flight_window = (
+        is_weather_window_before_active_flight(weather, schedule)
+        and schedule_has_operational_disruption(schedule)
+    )
+    good_late_clearing_support = has_good_late_clearing_support(
+        weather,
+        late_schedule_window,
+        early_active_flight_window,
+    )
     direction = wind_sector(weather.wind_direction_10m)
 
-    if weather.flight_window_available and not late_schedule_window:
+    if weather.flight_window_available and not late_schedule_window and not early_active_flight_window:
         adjustment += 0.08
-    elif weather.flight_window_available and late_schedule_window:
+    elif weather.flight_window_available and (late_schedule_window or early_active_flight_window):
         adjustment -= 0.08
     else:
         adjustment -= 0.06
@@ -491,6 +533,8 @@ def get_factor_summary(
         if has_flight_window:
             if is_weather_window_too_late_for_schedule(weather, schedule):
                 factors.append("найденное погодное окно начинается позже основного времени вылета по табло")
+            elif is_weather_window_before_active_flight(weather, schedule) and schedule_has_operational_disruption(schedule):
+                factors.append("найденное погодное окно заканчивается раньше активного рейса по табло")
             has_aggregation_window = (
                 weather.aggregation_window_start_hour is not None
                 and weather.aggregation_window_end_hour is not None

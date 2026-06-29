@@ -289,6 +289,124 @@ class PredictorBaselineTests(unittest.TestCase):
         self.assertLess(stressed_probability, 0.58)
         self.assertEqual(make_decision(stressed_probability, horizon_days=0), "no")
 
+    def test_delayed_active_flight_after_weather_window_blocks_close_date_yes(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=True,
+            flight_window_start_hour=17,
+            flight_window_end_hour=19,
+            flight_window_hours=3,
+            visibility=7450,
+            flight_window_visibility=7450,
+            cloud_cover=100,
+            cloud_cover_low=100,
+            flight_window_cloud_cover_low=100,
+            relative_humidity_2m=95,
+            dew_point_spread=0.8,
+            precipitation=0.1,
+            wind_speed_10m=5,
+            wind_gusts_10m=20,
+            weather_code=51,
+            fog_low_cloud_risk_level="medium",
+            flight_window_fog_low_cloud_risk_level="medium",
+        )
+        history = HistoricalSnapshot(
+            source="test",
+            similar_days_count=75,
+            completed_count=47,
+            cancelled_count=28,
+            historical_probability_flight=0.6234,
+            decade_probability_flight=0.75,
+        )
+        schedule = FlightScheduleSnapshot(
+            source="test-board",
+            available=True,
+            first_departure_hour=17,
+            first_scheduled_hour=20,
+            last_scheduled_hour=20,
+            moved_next_day=False,
+            completed_same_day=False,
+            status_summary="delayed",
+            total_flights=1,
+            pending_flights=1,
+            active_flight_hour=20,
+            active_flight_time="20:55",
+            active_flight_status="delayed",
+            flights=[
+                FlightScheduleFlight(status="delayed", state="pending", hour=20),
+            ],
+        )
+
+        probability = calculate_probability(
+            horizon_days=0,
+            weather=weather,
+            history=history,
+            schedule=schedule,
+        )
+
+        self.assertLess(probability, 0.58)
+        self.assertEqual(make_decision(probability, horizon_days=0), "no")
+
+    def test_weather_window_before_active_flight_does_not_penalize_normal_schedule(self) -> None:
+        weather = WeatherSnapshot(
+            source="test",
+            available=True,
+            flight_window_available=True,
+            flight_window_start_hour=17,
+            flight_window_end_hour=19,
+            flight_window_hours=3,
+            visibility=7450,
+            flight_window_visibility=7450,
+            cloud_cover=100,
+            cloud_cover_low=100,
+            flight_window_cloud_cover_low=100,
+            relative_humidity_2m=95,
+            dew_point_spread=0.8,
+            precipitation=0.1,
+            wind_speed_10m=5,
+            wind_gusts_10m=20,
+            weather_code=51,
+            fog_low_cloud_risk_level="medium",
+            flight_window_fog_low_cloud_risk_level="medium",
+        )
+        history = HistoricalSnapshot(
+            source="test",
+            similar_days_count=75,
+            completed_count=47,
+            cancelled_count=28,
+            historical_probability_flight=0.6234,
+            decade_probability_flight=0.75,
+        )
+        schedule = FlightScheduleSnapshot(
+            source="test-board",
+            available=True,
+            first_departure_hour=17,
+            first_scheduled_hour=20,
+            last_scheduled_hour=20,
+            moved_next_day=False,
+            completed_same_day=False,
+            status_summary="scheduled",
+            total_flights=1,
+            pending_flights=1,
+            active_flight_hour=20,
+            active_flight_time="20:55",
+            active_flight_status="scheduled",
+            flights=[
+                FlightScheduleFlight(status="scheduled", state="pending", hour=20),
+            ],
+        )
+
+        probability = calculate_probability(
+            horizon_days=0,
+            weather=weather,
+            history=history,
+            schedule=schedule,
+        )
+
+        self.assertGreaterEqual(probability, 0.58)
+        self.assertEqual(make_decision(probability, horizon_days=0), "yes")
+
     def test_extreme_gust_removes_flight_window(self) -> None:
         settings = Settings()
         row = {
