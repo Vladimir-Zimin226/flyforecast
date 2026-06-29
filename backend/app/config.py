@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     sakhalin_airports_weather_output: str = "/app/data/raw/sakhalin_airports/sakhalin_airport_weather_hourly.csv"
     sakhalin_airports_errors_output: str = "/app/data/raw/sakhalin_airports/collection_errors.csv"
     background_service_stale_hours: int = 26
-    historical_ml_enabled: bool = True
+    historical_ml_enabled: bool = False
     historical_ml_model_path: str = "/app/app/model_artifacts/historical_model_v1.joblib"
     historical_ml_metadata_path: str = "/app/app/model_artifacts/historical_model_v1.json"
 

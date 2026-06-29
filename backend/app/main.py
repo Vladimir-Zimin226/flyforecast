@@ -39,7 +39,7 @@ from app.services.predictor import (
     get_horizon_days,
     make_decision,
 )
-from app.services.historical_ml import predict_historical_ml
+from app.services.historical_ml import HistoricalMlPrediction, predict_historical_ml
 from app.services.weather import OPEN_METEO_MAX_HORIZON_DAYS, fetch_weather_for_date
 from app.services.users import (
     authenticate_user,
@@ -364,9 +364,11 @@ async def predict(
     model_version = MODEL_VERSION
     data_version = DATA_VERSION
     historical_ml_threshold: float | None = None
+    historical_ml_snapshot: HistoricalMlPrediction | None = None
 
     if horizon_days > OPEN_METEO_MAX_HORIZON_DAYS:
         historical_ml = predict_historical_ml(target_date=target_date, as_of_date=today)
+        historical_ml_snapshot = historical_ml
         logger.info(
             (
                 "historical_ml_snapshot request_id=%s target_date=%s available=%s "
@@ -487,6 +489,7 @@ async def predict(
         session_prediction_number=session_prediction_number,
         utm_source=utm_source,
         request_id=request_id,
+        historical_ml_snapshot=historical_ml_snapshot,
     )
 
     if user and not is_admin_user:
@@ -519,6 +522,7 @@ def log_prediction(
     session_prediction_number: int,
     utm_source: str | None,
     request_id: str,
+    historical_ml_snapshot: HistoricalMlPrediction | None = None,
 ) -> None:
     path = Path(settings.prediction_log_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -589,6 +593,19 @@ def log_prediction(
         "completed_count": result.history.completed_count,
         "cancelled_count": result.history.cancelled_count,
         "historical_probability_flight": result.history.historical_probability_flight,
+        "historical_ml_available": historical_ml_snapshot.available if historical_ml_snapshot else None,
+        "historical_ml_probability_flight": (
+            historical_ml_snapshot.probability_flight if historical_ml_snapshot else None
+        ),
+        "historical_ml_threshold": historical_ml_snapshot.threshold if historical_ml_snapshot else None,
+        "historical_ml_raw_probability_flight": (
+            historical_ml_snapshot.raw_probability_flight if historical_ml_snapshot else None
+        ),
+        "historical_ml_raw_threshold": historical_ml_snapshot.raw_threshold if historical_ml_snapshot else None,
+        "historical_ml_model_version": historical_ml_snapshot.model_version if historical_ml_snapshot else None,
+        "historical_ml_data_version": historical_ml_snapshot.data_version if historical_ml_snapshot else None,
+        "historical_ml_model_name": historical_ml_snapshot.model_name if historical_ml_snapshot else None,
+        "historical_ml_reason": historical_ml_snapshot.reason if historical_ml_snapshot else None,
     }
 
     with path.open("a", encoding="utf-8") as file:

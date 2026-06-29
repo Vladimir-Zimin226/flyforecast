@@ -359,6 +359,25 @@ async def make_prediction_rows(conn: sqlite3.Connection, horizons: list[int], ti
 
         if horizon > OPEN_METEO_MAX_HORIZON_DAYS:
             historical_ml = predict_historical_ml(target_date=target_date, as_of_date=run_date)
+            logger.info(
+                (
+                    "historical_ml_snapshot run_date=%s target_date=%s horizon_days=%s available=%s "
+                    "probability_flight=%s threshold=%s raw_probability_flight=%s raw_threshold=%s "
+                    "model_version=%s data_version=%s model_name=%s reason=%s"
+                ),
+                run_date.isoformat(),
+                target_date.isoformat(),
+                horizon,
+                historical_ml.available,
+                historical_ml.probability_flight,
+                historical_ml.threshold,
+                historical_ml.raw_probability_flight,
+                historical_ml.raw_threshold,
+                historical_ml.model_version,
+                historical_ml.data_version,
+                historical_ml.model_name,
+                historical_ml.reason,
+            )
             if historical_ml.available and historical_ml.probability_flight is not None:
                 probability = apply_schedule_guardrails(historical_ml.probability_flight, schedule=schedule)
                 lower_bound = 0.0 if schedule.available and schedule.moved_next_day else 0.05
