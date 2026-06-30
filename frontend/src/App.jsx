@@ -348,19 +348,24 @@ const mediaMentions = [
     outlet: "Sakh.online",
     title: "Сахалинец запустил ИИ-сервис прогнозирования рейсов для Кунашира",
     href: "https://sakh.online/news/18/2026-06-15/sahalinets-zapustil-ii-servis-prognozirovaniya-reysov-dlya-kunashira-516134"
+  },
+  {
+    outlet: "Советский Сахалин",
+    title: "Сахалинец создал сайт прогноза авиавылетов с Кунашира",
+    href: "https://sovsakh.ru/sahalinecz-sozdal-sajt-prognoza-aviavyletov-s-kunashira/"
   }
 ];
 
 const forecastFaqItems = [
   {
-    question: "Что прогнозирует FlyForecast?",
+    question: "Что прогнозирует flyforecast.ru?",
     answer:
       "Сервис оценивает вероятность выполнения рейса через аэропорт Менделеево на Кунашире на выбранную дату."
   },
   {
     question: "Это официальный статус рейса?",
     answer:
-      "Нет. FlyForecast дает вероятностную оценку и не заменяет официальные данные перевозчика или аэропорта."
+      "Нет. flyforecast.ru дает вероятностную оценку и не заменяет официальные данные перевозчика или аэропорта."
   },
   {
     question: "Это прогноз наличия билетов?",
@@ -2079,7 +2084,7 @@ export default function App() {
 
       <section className="card media-card">
         <div className="eyebrow">Упоминания в СМИ</div>
-        <h2>О FlyForecast пишут на Сахалине</h2>
+        <h2>О flyforecast.ru пишут на Сахалине</h2>
         <div className="media-list">
           {mediaMentions.map((item) => (
             <a className="media-link" href={item.href} target="_blank" rel="noreferrer" key={item.href}>
@@ -2102,6 +2107,13 @@ export default function App() {
           ))}
         </div>
       </section>
+
+      <footer className="site-credit">
+        Разработано{" "}
+        <a href="https://www.zmncraft.ru/" target="_blank" rel="noreferrer">
+          ZMNCRAFT
+        </a>
+      </footer>
     </main>
   );
 }

@@ -1077,6 +1077,24 @@ button:disabled {
   line-height: 1.58;
 }
 
+.site-credit {
+  padding: 12px 0 2px;
+  color: var(--color-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.site-credit a {
+  color: var(--color-tertiary);
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.site-credit a:hover {
+  text-decoration: underline;
+}
+
 .policy-page {
   max-width: 900px;
 }
