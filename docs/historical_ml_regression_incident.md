@@ -2,7 +2,7 @@
 
 Date opened: 2026-06-29
 
-Status: investigation open, production mitigation applied.
+Status: root cause identified, production mitigation applied.
 
 ## Summary
 
@@ -74,6 +74,45 @@ Segment metrics from metadata:
 | long_91_365 | 91-365 | 0.57 | 0.572650 | 0.449214 | 0.056604 | 21 | 79 |
 
 The `91-365` segment is the strongest red flag. Its test `f1_completed=0.056604` means it almost never identifies completed/successful days. It can still look superficially acceptable by accuracy if the split has many cancellations or if the selection metric rewards avoiding false positives, but product-wise it is bad for finding good dates.
+
+## Confirmed Root Cause
+
+The deployed historical ML path was scoring with a runtime dataset that did not match the dataset used to train the artifact.
+
+- Training script default dataset: `data/processed/dataset_daily_flights_historical_only.csv`.
+- Artifact data version: `historical-only-as-of-backtest-v2-2026-06-14`.
+- Runtime/backend dataset default and `.env` value: `/app/data/processed/dataset_daily_flights.csv`.
+
+Local dataset comparison during the investigation:
+
+| dataset | rows | latest date | completed rate |
+|---|---:|---|---:|
+| `data/processed/dataset_daily_flights.csv` | 699 | 2026-04-07 | 0.545 |
+| `data/processed/dataset_daily_flights_v3.csv` | 761 | 2026-05-26 | 0.540 |
+| `data/processed/dataset_daily_flights_historical_only.csv` | 779 | 2026-06-13 | 0.546 |
+
+This explains why the production examples looked worse than the old calendar/history estimate. For example, for `target_date=2026-07-16` and `as_of_date=2026-06-29`:
+
+| feature | runtime `dataset_daily_flights.csv` | training-compatible `historical_only` dataset |
+|---|---:|---:|
+| `prev_1_completed` | 0 | 1 |
+| `prev_7_cancelled_count` | 7 | 2 |
+| `prev_14_completed_rate` | 0.0000 | 0.7857 |
+| `prev_30_completed_rate` | 0.1000 | 0.7667 |
+| `cancelled_streak_before` | 14 | 0 |
+| `completed_streak_before` | 0 | 4 |
+| `history_probability_flight` | 0.6301 | 0.6410 |
+
+The old calendar/history probability was still neutral-positive, but ML also consumed recent-history features. On the stale runtime dataset, those features falsely described the recent period as a long cancellation streak. The fixed model artifact therefore produced much more pessimistic probabilities in production.
+
+Contributing factors:
+
+- Historical ML was enabled by default on 2026-06-15 and disabled by default on 2026-06-29.
+- The model did not validate that the runtime dataset matched the artifact data version.
+- The long-horizon segment was already product-weak in metadata (`f1_completed=0.056604`, `false_no=79`).
+- Model selection optimized CV/validation score rather than hard product gates such as minimum completed-day recall, false-no budget, and positive-rate sanity checks.
+
+Conclusion: the primary failure was a training/runtime data contract mismatch, amplified by a model objective that tolerated too many false `no` predictions.
 
 ## Current Hypotheses
 
@@ -237,4 +276,3 @@ Do not re-enable historical ML publicly until all are true:
 - Public user-facing probabilities do not suppress old historical probabilities without a clear reason.
 - Raw ML diagnostics are visible in backups for at least one shadow period.
 - Product owner accepts the tradeoff between false `yes` and false `no`.
-

@@ -471,6 +471,46 @@ class PredictorBaselineTests(unittest.TestCase):
 
         self.assertEqual(make_decision(probability, horizon_days=0), "no")
 
+    def test_long_horizon_does_not_return_yes_below_fifty_percent(self) -> None:
+        self.assertEqual(make_decision(0.49, horizon_days=120), "no")
+        self.assertEqual(make_decision(0.50, horizon_days=120), "yes")
+
+    def test_long_horizon_defaults_positive_for_neutral_history(self) -> None:
+        probability = calculate_probability(
+            horizon_days=120,
+            weather=WeatherSnapshot(source="test", available=False),
+            history=HistoricalSnapshot(
+                source="test",
+                similar_days_count=48,
+                completed_count=25,
+                cancelled_count=23,
+                historical_probability_flight=0.50,
+                month_probability_flight=0.52,
+                decade_probability_flight=0.48,
+            ),
+        )
+
+        self.assertGreaterEqual(probability, 0.50)
+        self.assertEqual(make_decision(probability, horizon_days=120), "yes")
+
+    def test_long_horizon_marks_clear_historical_risk_as_no(self) -> None:
+        probability = calculate_probability(
+            horizon_days=120,
+            weather=WeatherSnapshot(source="test", available=False),
+            history=HistoricalSnapshot(
+                source="test",
+                similar_days_count=42,
+                completed_count=12,
+                cancelled_count=30,
+                historical_probability_flight=0.32,
+                month_probability_flight=0.42,
+                decade_probability_flight=0.38,
+            ),
+        )
+
+        self.assertLess(probability, 0.50)
+        self.assertEqual(make_decision(probability, horizon_days=120), "no")
+
 
 if __name__ == "__main__":
     unittest.main()

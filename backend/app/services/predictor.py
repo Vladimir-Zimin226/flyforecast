@@ -406,6 +406,12 @@ def calculate_probability(
     history: HistoricalSnapshot,
     schedule: FlightScheduleSnapshot | None = None,
 ) -> float:
+    if horizon_days > 46:
+        base = calculate_long_horizon_probability(history)
+        base = apply_schedule_guardrails(base, schedule)
+        lower_bound = 0.0 if schedule is not None and schedule.available and schedule.moved_next_day else 0.05
+        return round(min(max(base, lower_bound), 0.95), 4)
+
     base = history.historical_probability_flight
 
     if history.decade_probability_flight is not None:
@@ -423,19 +429,82 @@ def calculate_probability(
     return round(min(max(base, lower_bound), 0.95), 4)
 
 
+def _long_horizon_signal_adjustment(probability: float | None, weak: float, bad: float, severe: float) -> float:
+    if probability is None:
+        return 0.0
+    if probability < 0.35:
+        return -severe
+    if probability < 0.40:
+        return -bad
+    if probability < 0.45:
+        return -weak
+    if probability < 0.50:
+        return -(weak / 2)
+    if probability >= 0.65:
+        return 0.04
+    if probability >= 0.58:
+        return 0.02
+    return 0.0
+
+
+def calculate_long_horizon_probability(history: HistoricalSnapshot) -> float:
+    """
+    Long-horizon forecasts are a historical risk detector, not a weather model.
+    Start optimistic and only push below 50% when historical signals are clearly bad.
+    """
+    base = 0.66
+    has_enough_similar_days = history.similar_days_count >= 20
+
+    if has_enough_similar_days:
+        base += _long_horizon_signal_adjustment(
+            history.historical_probability_flight,
+            weak=0.12,
+            bad=0.20,
+            severe=0.28,
+        )
+    else:
+        base += _long_horizon_signal_adjustment(
+            history.historical_probability_flight,
+            weak=0.06,
+            bad=0.12,
+            severe=0.18,
+        )
+
+    base += _long_horizon_signal_adjustment(
+        history.decade_probability_flight,
+        weak=0.04,
+        bad=0.08,
+        severe=0.12,
+    )
+    base += _long_horizon_signal_adjustment(
+        history.month_probability_flight,
+        weak=0.03,
+        bad=0.05,
+        severe=0.08,
+    )
+
+    supporting_risk_signals = [
+        value
+        for value in (history.decade_probability_flight, history.month_probability_flight)
+        if value is not None and value < 0.45
+    ]
+    if history.historical_probability_flight < 0.45 and supporting_risk_signals:
+        base -= 0.05
+
+    return round(min(max(base, 0.25), 0.85), 4)
+
+
 def decision_threshold(horizon_days: int) -> float:
     """
     Продуктовый порог:
     - близкая дата требует более уверенного "Да";
-    - дальняя дата может быть "Да", если она лучше исторического окна.
+    - после горизонта погоды "Да" не должно противоречить вероятности ниже 50%.
     """
     if horizon_days <= 2:
         return 0.58
     if horizon_days <= 10:
         return 0.55
-    if horizon_days <= 46:
-        return 0.45
-    return 0.30
+    return 0.50
 
 
 def make_decision(probability_flight: float, horizon_days: int, threshold: float | None = None) -> str:
